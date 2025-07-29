@@ -66,4 +66,7 @@ Using GDSC2 data and "oncoPredict()" tool in R, we calculated the drugs' IC50 va
 
 ## Machine learning analysis
 
-To evaluate our c-RCDI based distinction of the patients, we further applied six classification machine learning models to the 43 genes gene expression and c-RCDI to predict the classes.
+To evaluate our c-RCDI-based distinction of the patients, we further applied six classification machine learning models to the 43 genes' gene expression and c-RCDI to predict the classes.
+
+
+Copyright | Computational Genomics & Transcriptomics (CG&T) Laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Telangana-502285, India
