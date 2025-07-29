@@ -3,6 +3,179 @@
 setwd("/home2/New_Objective2_Biomarker_research/batch_corrected_rna_seq/")
 
 #### ====================================================== ###
+################# Identification of DEGs ######################
+###=========================================================###
+
+rm(list= ls())
+#rm(list=ls())
+set.seed(42)
+
+library(dplyr)
+library(data.table)
+library(readxl)
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+
+# EMTAB dataset DEGs -------
+
+### Reading the dataframes - counts values ###
+library(data.table)
+emtab <- data.frame(fread("/home2/New_Objective2_Biomarker_research/E-MTAB-12862/data/CRC.SW.mRNA.symbol.count.txt", sep='\t'), row.names=1, check.names=F)
+dim(emtab)
+emtab_tumor <- emtab[, grepl("\\.T.*$", colnames(emtab))]
+dim(emtab_tumor)
+emtab_normal <- emtab[, grepl("\\.N.*$", colnames(emtab))]
+dim(emtab_normal)
+emtab <- cbind(emtab_tumor, emtab_normal)
+
+
+###### DEG analysis using limma ## --------
+#BiocManager::install("DESeq2")
+# library(DESeq2)
+
+# Load required libraries
+library(edgeR)
+library(limma)
+library(data.table)
+
+# Define group labels for each sample (e.g., 1063 tumor and 120 normal samples)
+group <- c(rep("Tumor", 1063), rep("Normal", 120))
+if(length(group) != ncol(emtab)) stop("The number of samples in 'data' does not match the length of 'group'.")
+
+# Create a DGEList object
+dge <- DGEList(counts = emtab)
+# Filter out lowly expressed genes (optional; adjust cutoff as needed)
+keep <- filterByExpr(dge, group = group)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+
+# Normalize library sizes
+dge <- calcNormFactors(dge)
+
+# Create design matrix
+# First, set the group factor with "Normal" as the reference level
+group <- factor(group, levels = c("Normal", "Tumor"))
+design <- model.matrix(~ group)
+
+# Apply voom transformation to account for mean-variance relationship
+v <- voom(dge, design, plot = TRUE)
+
+# Fit the linear model using limma
+fit <- lmFit(v, design)
+
+# Compute moderated t-statistics, p-values, and log-odds of differential expression
+fit <- eBayes(fit)
+
+# Extract differential expression results for the tumor effect
+results_emtab <- topTable(fit, coef = "groupTumor", number = Inf, adjust.method = "BH", sort.by = "P")
+print(head(results_emtab))
+
+# Save the results to a CSV file
+write.csv(results_emtab, file = "DEGs_Tumor_vs_Normal_EMTAB.csv", row.names = TRUE)
+results_emtab <- read.table("DEGs_Tumor_vs_Normal_EMTAB.csv", sep=',', header=T, check.names=F, row.names=1)
+degs_emtab <- results_emtab[(abs(results_emtab$logFC) > 0.5) & (results_emtab$adj.P.Val) < 0.05,] ## 4005 6
+write.table(degs_emtab, "DEGs_emtab_0.5.txt", sep="\t", row.names = T, col.names = NA)
+
+top10_genes <- rownames(degs_emtab[order(degs_emtab$adj.P.Val), ][1:10, ])
+
+# Create Volcano Plot using EnhancedVolcano
+library(EnhancedVolcano)
+tiff("volcano_plot_emtab.tif", width = 8, height = 6, units = "in", bg = "white", res=600, compression = "lzw")
+EnhancedVolcano(results_emtab,
+                lab = rownames(results_emtab),
+                x = 'logFC',
+                y = 'adj.P.Val',
+                title = NULL,
+                subtitle = NULL,
+                xlab = bquote(~Log[2]~ 'Fold Change'),
+                ylab = bquote(~-Log[10]~ 'Adjusted P-value'),
+                pCutoff = 0.05,
+                FCcutoff = 0.5,
+                pointSize = 1,
+                labSize = 4.0,
+                colAlpha = 0.4,
+                legendLabels = c('ns', 'log2 FC', 'p.adj', 'significant'),
+                # legendLabels = c('NS', 'Significant'),
+                legendPosition = 'right',
+                legendLabSize = 12,
+                legendIconSize = 3.0,
+                drawConnectors = F,
+                selectLab = top10_genes,  # Highlight top 10 genes
+                axisLabSize = 16,
+                caption = NULL
+                )
+dev.off()
+
+# TCGA dataset DEGs -------
+cbio_tumor <- data.frame(fread("/home2/New_Objective2_Biomarker_research/UCSC_Xena_Browser/TCGA_CRC_cancer_count_batch.csv", sep=',', header=T), check.names=F, row.names = 1)
+cbio_normal <- data.frame(fread("/home2/New_Objective2_Biomarker_research/UCSC_Xena_Browser/TCGA_CRC_normal_count_batch.csv", sep=',', header=T), check.names=F, row.names = 1)
+cbio <- merge(cbio_tumor, cbio_normal, by=0)
+row.names(cbio) <- cbio[, 1]
+cbio <- cbio[,-1]
+# dim(cbio)
+
+group <- c(rep("Tumor", 618), rep("Normal", 51))
+if(length(group) != ncol(cbio)) stop("The number of samples in 'data' does not match the length of 'group'.")
+
+# Create a DGEList object
+dge <- DGEList(counts = cbio)
+# Filter out lowly expressed genes (optional; adjust cutoff as needed)
+keep <- filterByExpr(dge, group = group)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+
+# Normalize library sizes
+dge <- calcNormFactors(dge)
+
+# Create design matrix
+# First, set the group factor with "Normal" as the reference level
+group <- factor(group, levels = c("Normal", "Tumor"))
+design <- model.matrix(~ group)
+# The coefficient 'groupTumor' will reflect the log2 fold change of Tumor vs Normal
+
+# Apply voom transformation to account for mean-variance relationship
+v <- voom(dge, design, plot = TRUE)
+
+# Fit the linear model using limma
+fit <- lmFit(v, design)
+
+# Compute moderated t-statistics, p-values, and log-odds of differential expression
+fit <- eBayes(fit)
+
+# Extract differential expression results for the tumor effect
+results_tcga <- topTable(fit, coef = "groupTumor", number = Inf, adjust.method = "BH", sort.by = "P")
+print(head(results_tcga))
+
+# Save the results to a CSV file
+write.csv(results_tcga, file = "DEGs_Tumor_vs_Normal_TCGA.csv", row.names = TRUE)
+results_tcga <- read.table("DEGs_Tumor_vs_Normal_TCGA.csv", row.names=1, sep=',', check.names = F, header = T)
+degs_cbio <- results_tcga[(abs(results_tcga$logFC) > 0.5) & (results_tcga$adj.P.Val) < 0.05,] # 7061  6
+write.table(degs_cbio, "DEGs_TCGA_0.5.txt", sep="\t", row.names = T, col.names=NA)
+
+# Create Volcano Plot using EnhancedVolcano
+tiff("volcano_plot_tcga.tif", width = 8, height = 8, units = "in", bg = "white", res=600, compression = "lzw")
+EnhancedVolcano(results_tcga,
+                lab = rownames(results_tcga),
+                x = 'logFC',
+                y = 'adj.P.Val',
+                title = 'Volcano Plot of Differential Expression : TCGA',
+                subtitle = 'Cutoffs: |log2FC| > 0.5 and adj.P.Val < 0.05',
+                xlab = bquote(~Log[2]~ 'Fold Change'),
+                ylab = bquote(~-Log[10]~ 'Adjusted P-value'),
+                pCutoff = 0.05,
+                FCcutoff = 0.5,
+                pointSize = 0.5,
+                labSize = 6.0,
+                colAlpha = 0.6,
+                legendLabels = c('NS', 'Log2 FC', 'Adj. P-value', 'Adj. P-value & Log2 FC'),
+                legendPosition = 'top',
+                legendLabSize = 15,
+                legendIconSize = 6.0,
+                drawConnectors = F
+                # widthConnectors = 0.5,
+                # colConnectors = "grey50"
+                )
+dev.off()
+
+#### ====================================================== ###
 ################# Dataset loading and preprocesses ######################
 ###=========================================================###
 
