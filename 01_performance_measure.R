@@ -184,14 +184,10 @@ gc()
 rm(list=ls())
 seed = 42
 set.seed(seed)
-
-
 start_time <- Sys.time()
-
 library(dplyr)
 library(data.table)
 # library(readxl)
-
 
 library(BiocParallel)
 library(parallel)
@@ -199,16 +195,9 @@ library(parallel)
 num_detected_cores = 7 
 register(MulticoreParam(workers = num_detected_cores))
 
-# merged<- data.frame(fread("combined_z_score_clinical.csv", sep=','), row.names=1, check.names=F)
 merged <- data.frame(fread("combined_z_score_clinical_batch.csv", sep=','), row.names=1, check.names=F)
-# merged_full <- data.frame(fread("combined_z_score_clinical_batch.csv", sep=','), row.names=1, check.names=F)
-# print(paste0("No. of samples in original dataset (E-MTAB-12862 + TCGA) :", nrow(merged_full)))
-# merged <- merged_full[ (merged_full$OS_MONTHS <= 140.38356164) ,]
-# print(paste0("No. of samples in dataset (E-MTAB-12862 + TCGA) filtered by OS_MONTHS :", nrow(merged)))
 
-# merged<- data.frame(fread("emtab_z_score_clinical.csv", sep=','), row.names=1, check.names=F)
-# train   <- merged
-train  <- merged %>% dplyr::sample_frac(0.8) ##dim(train) #743 14558
+train  <- merged %>% dplyr::sample_frac(0.8)
 test1   <- merged[!(rownames(merged) %in% rownames(train)), ]
 degs_emtab <- data.frame(fread("DEGs_emtab_0.5.txt", sep = "\t", header = T), row.names=1, check.names = F)
 degs_emtab <- row.names(degs_emtab)
@@ -216,9 +205,6 @@ degs_tcga <- data.frame(fread("DEGs_TCGA_0.5.txt", sep = "\t", header = T), row.
 degs_tcga <- row.names(degs_tcga)
 common_degs <- intersect(degs_emtab, degs_tcga)
 genes_to_select <- common_degs
-# train <- data.frame(fread("emtab_z_score_clinical.csv", sep=',', header=T), row.names=1, check.names=F)
-# # # # train <- train[ (train$OS_MONTHS <= 140.38356164) ,]
-# test1 <- data.frame(fread("tcga_z_score_clinical.csv", sep = ",", header = T), row.names=1, check.names=F)
 test2 <- data.frame(fread("independent_ds_gse39582.csv", sep = ",", header = T), row.names=1, check.names=F)
 test2 <- test2 %>%
   dplyr::rename(
@@ -231,14 +217,8 @@ test3 <- test3 %>%
     OS_MONTHS = dfs_time,
     OS_STATUS = dfs_event
   )
-test4 <- data.frame(fread("independent_ds_gse14333.csv", sep=",", header=T), row.names = 1, check.names = F)
-test4 <- test4 %>%
-  dplyr::rename(
-    OS_MONTHS = DFS_Time,
-    OS_STATUS = DFS_Cens
-  )
 
-data_list <- list(train, test1, test2, test3, test4)
+data_list <- list(train, test1, test2, test3)
 
 # Find common column names across all data frames
 common_cols <- Reduce(intersect, lapply(data_list, colnames))
@@ -247,17 +227,14 @@ train <- train[, common_cols, drop = FALSE]
 test1 <- test1[, common_cols, drop = FALSE]
 test2 <- test2[, common_cols, drop = FALSE]
 test3 <- test3[, common_cols, drop = FALSE]
-test4 <- test4[, common_cols, drop = FALSE]
-
 
 # subset for only DEGs for all datasets
 train <- train[, names(train) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
 test1 <- test1[, names(test1) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
 test2 <- test2[, names(test2) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
 test3 <- test3[, names(test3) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
-test4 <- test4[, names(test4) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
 
-
+## Select the specific pathway related genes (e.g., we used parthanatos-related genes for this example)
 gene_set <- read.table("../gene_lists/parthanatos_related_genes.txt", sep = ",", header = FALSE, check.names = FALSE)$V1
 gene_set <- unique(gene_set)
 
@@ -266,8 +243,6 @@ train <- train[, names(train) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
 test1 <- test1[, names(test1) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
 test2 <- test2[, names(test2) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
 test3 <- test3[, names(test3) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
-test4 <- test4[, names(test4) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
-
 
 library("survival")
 library("survminer")
@@ -298,35 +273,6 @@ df_list <- bplapply(df_list, function(x) {
   x <- x[!(x$OS_MONTHS < 1),]
   # x <- x[ (x$OS_MONTHS <= 140.38356164) ,]
 }, BPPARAM = MulticoreParam(num_detected_cores))
-
-# df_list <- lapply(df_list, function(x) {
-#   # Identify feature columns (excluding OS_MONTHS and OS_STATUS)
-#   feature_cols <- setdiff(colnames(x), c("OS_MONTHS", "OS_STATUS"))
-#   
-#   # Apply min-max scaling to each feature column
-#   for (col in feature_cols) {
-#     min_val <- min(x[[col]], na.rm = TRUE)
-#     max_val <- max(x[[col]], na.rm = TRUE)
-#     
-#     # Check if min and max are the same (to avoid division by zero)
-#     if (max_val > min_val) {
-#       x[[col]] <- (x[[col]] - min_val) / (max_val - min_val)
-#     } else {
-#       # If min and max are the same (e.g., all values are the same), set all scaled values to 0.5 (or any constant)
-#       x[[col]] <- 0.5 # or you could set to 0, or keep original values, depending on requirement
-#       warning(paste("Column", col, "has constant values. Min-max scaling resulted in constant values set to 0.5."))
-#     }
-#   }
-#   return(x)
-# })
-
-#scaling of the datasets again
-# df_list <- bplapply(df_list, function(x) {
-#   survival_data <- x[, c("OS_MONTHS", "OS_STATUS"), drop=FALSE]
-#   scaled_data <- scale(x[, !(names(x) %in% c("OS_MONTHS", "OS_STATUS"))], center = TRUE, scale = TRUE)
-#   x <- data.frame(scaled_data, survival_data)
-#   return(x)
-# }, BPPARAM = MulticoreParam(num_detected_cores))
 
 # select the train dataset
 train <- df_list$Train ## explicitly select the train dataset
@@ -654,68 +600,6 @@ results <- bind_rows(results, bind_rows(cc_list_final)) # Append to results data
 
 print(results[, 1:3])
 
-
-########################## 1.5 Univariate + SVM  ################################
-#gc()
-
-#library(survival)         # Survival analysis
-#library(survivalsvm)      # Survival SVM
-#library(caret)            # Feature selection
-#library(e1071)            # SVM model
-#library(dplyr)            # Data manipulation
-
-#genes <- row.names(res_mod)
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-#gc()
-#set.seed(seed)
-#fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-
-#RS_list <- bplapply(df_list, function(x) {
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  as.numeric(predict(fit, df_data)$predicted)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]                                                                                
-#  df <- df_list[[x]]
-#  cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#  
-#  data.frame(
-#    Model_combination = "Univariate + SVM",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-#results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-
-#print(results[, 1:3])
-
 ######################### 1.6 Univariate + GBM  ################################
 gc()
 library(gbm)        # For Gradient Boosting Machine
@@ -779,128 +663,6 @@ cc_list
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-######################### 1.7 Uni + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- row.names(res_mod)
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 50)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#set.seed(seed)  # Ensure reproducibility
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
 
 ######################### 1.8 Uni + CoxBoost ################################
 gc()
@@ -1176,79 +938,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-
-########################  2.1 Multivariate  ################################
-
-# genes <- covariates
-# train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-# formula_string <- paste("Surv(OS_MONTHS, OS_STATUS) ~ ", paste(genes, collapse = " + "))
-# formula <- as.formula(formula_string)
-# res.cox <- coxph(formula, data = train_data)
-# # step.model <- stepAIC(res.cox, direction = "both", trace = FALSE)
-# summary(res.cox)
-# res.cox.coeff <- summary(res.cox)$coefficients
-# res.cox.coeff.sig <- res.cox.coeff[res.cox.coeff[,ncol(res.cox.coeff)] < 0.05,]
-# dim(res.cox.coeff.sig)
-# res.cox.coeff.sig
-# 
-# genes <- row.names(res.cox.coeff.sig)
-# train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-# formula_string <- paste("Surv(OS_MONTHS, OS_STATUS) ~ ", paste(genes, collapse = " + "))
-# formula <- as.formula(formula_string)
-# res.cox <- coxph(formula, data = train_data)
-#  # step.model <- stepAIC(res.cox, direction = "both", trace = FALSE)
-# summary(res.cox)
-# res.cox.coeff <- summary(res.cox)$coefficients
-# res.cox.coeff.sig <- res.cox.coeff[res.cox.coeff[,ncol(res.cox.coeff)] < 0.05,]
-# dim(res.cox.coeff.sig)
-# res.cox.coeff.sig
-# 
-# genes <- row.names(res.cox.coeff)
-# RS_list <- bplapply(df_list, function(x) {
-#   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#   predict(res.cox, type = "risk", newdata = df_data)
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# cc_list <- bplapply(names(df_list), function(x) {
-#   RS <- RS_list[[x]]
-#   df <- df_list[[x]]
-#   cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#   auc_values <- sapply(time_points, function(tp) {
-#     roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                            status = df$OS_STATUS,
-#                            marker = RS,
-#                            predict.time = tp,
-#                            method = "KM") # or "NNE", method for handling censoring
-#     return(roc_obj$AUC)
-#   })
-#   names(auc_values) <- paste0("AUC_", time_points, "months")  #Naming AUC values
-#    #Calculate Time-dependent PR-AUC at specified time points
-#   pr_auc_values <- sapply(time_points, function(tp) {
-#     binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0)  #Event within time point vs. not
-#     pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#     return(pr_obj$auc.integral)
-#   })
-#   names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  #Naming PR-AUC values
-# 
-#   data.frame(
-#     Model_combination = "Multivariate",
-#     Dataset_Name = x,
-#     C_index = as.numeric(cc),
-#     AUC_12months = as.numeric(auc_values["AUC_12months"]),  #Extract AUC values
-#     AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#     AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#     PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]),  #Extract PR-AUC values
-#     PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#     PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#     gene_set = paste(genes, collapse = ","),
-#     No_of_genes_selected = length(genes)
-#   )
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# results <- bind_rows(results, bind_rows(cc_list))  #Append to results dataframe
-# print(results[, 1:3])
-# Concordance Index (C-index) for RFC model on training data:  0.5922707 
-
-
 ######################## 2.2 StepCox  ################################
 genes <- covariates
 train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
@@ -1523,109 +1212,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-########################## 2.6 SVM  ################################
-#gc()
-#library(survival)         # Survival analysis
-#library(survivalsvm)      # Survival SVM
-#library(caret)            # Feature selection
-#library(e1071)            # SVM model
-#library(dplyr)            # Data manipulation
-
-#genes <- covariates
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-#set.seed(seed)
-#fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-
-#RS_list <- bplapply(df_list, function(x) {
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  as.numeric(predict(fit, df_data)$predicted)
-#}, BPPARAM= MulticoreParam(num_detected_cores))
-
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]                                                                                
-#  df <- df_list[[x]]
-#  cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#  
-#  data.frame(
-#    Model_combination = "SVM",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM= MulticoreParam(num_detected_cores))
-#           shrinkage = 0.0001,
-#           cv.folds = 10,n.cores = 8)
-
-#RS_list <- bplapply(df_list, function(x) {
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predict(fit, df_data, n.trees=best, type="link")
-#}, BPPARAM= MulticoreParam(num_detected_cores))
-
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]                                                                                
-#  df <- df_list[[x]]
-#  cc <- summary(coxph(Surv(OS_MONTHS,OS_STATUS) ~ RS, data = df))$concordance[1]
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#  
-#  data.frame(
-#    Model_combination = "GBM",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM= MulticoreParam(num_detected_cores))
-
-#results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-
-#print(results[, 1:3])
-
-
 ######################### 3.1 Uni + LASSO + StepCox  ################################
 library(lubridate)
 library(ggsurvfit)
@@ -1717,65 +1303,6 @@ cc_list <- bplapply(names(df_list), function(x) {
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-
-
-########################## 3.2 Uni + LASSO + SVM  ################################
-# 
-# 
-# gc()
-# genes <- row.names(cf_lasso_df_non_zero)
-# train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-# 
-# set.seed(seed)
-# fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-# 
-# RS_list <- bplapply(df_list, function(x) {
-#   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#   as.numeric(predict(fit, df_data)$predicted)
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# cc_list <- bplapply(names(df_list), function(x) {
-#   RS <- RS_list[[x]]                                                                                
-#   df <- df_list[[x]]
-#   cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#   auc_values <- sapply(time_points, function(tp) {
-#     roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                            status = df$OS_STATUS,
-#                            marker = RS,
-#                            predict.time = tp,
-#                            method = "KM") # or "NNE", method for handling censoring
-#     return(roc_obj$AUC)
-#   })
-#   names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#   # Calculate Time-dependent PR-AUC at specified time points
-#   pr_auc_values <- sapply(time_points, function(tp) {
-#     binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#     pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#     return(pr_obj$auc.integral)
-#   })
-#   names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#   
-#   data.frame(
-#     Model_combination = "Univariate + LASSO + SVM",
-#     Dataset_Name = x,
-#     C_index = as.numeric(cc),
-#     AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#     AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#     AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#     PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#     PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#     PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#     gene_set = paste(genes, collapse = ","),
-#     No_of_genes_selected = length(genes)
-#   )
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-# 
-# print(results[, 1:3])
-
-
 
 ######################### 3.3 Uni + LASSO + GBM  ################################
 
@@ -1910,8 +1437,6 @@ cc_list <- bplapply(names(df_list), function(x) {
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-
 
 ######################### 3.6 Uni + LASSO + RSF  ################################
 
@@ -2160,131 +1685,6 @@ cc_list <- bplapply(names(df_list), function(x) {
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-
-########################## 3.10 Uni + LASSO + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- row.names(cf_lasso_df_non_zero)
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 100)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
-
 
 ######################### 4.1 Uni + CoxBoost + LASSO  ################################
 
@@ -2763,252 +2163,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-######################### 4.8 Uni + CoxBoost +SVM  ################################
-# gc()
-# 
-# genes <- names(nonzero_coef)
-# train_data <- train[, names(train) %in% c(genes, "OS_STATUS", "OS_MONTHS")]
-# set.seed(seed)
-# fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-# 
-# RS_list <- bplapply(df_list, function(x) {
-#   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#   as.numeric(predict(fit, df_data)$predicted)
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# cc_list <- bplapply(names(df_list), function(x) {
-#   RS <- RS_list[[x]]
-#   df <- df_list[[x]]
-#   cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#   auc_values <- sapply(time_points, function(tp) {
-#     roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                            status = df$OS_STATUS,
-#                            marker = RS,
-#                            predict.time = tp,
-#                            method = "KM") # or "NNE", method for handling censoring
-#     return(roc_obj$AUC)
-#   })
-#   names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#   # Calculate Time-dependent PR-AUC at specified time points
-#   pr_auc_values <- sapply(time_points, function(tp) {
-#     binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#     pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#     return(pr_obj$auc.integral)
-#   })
-#   names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-# 
-#   data.frame(
-#     Model_combination = "Univariate + CoxBoost + SVM",
-#     Dataset_Name = x,
-#     C_index = as.numeric(cc),
-#     AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#     AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#     AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#     PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#     PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#     PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#     gene_set = paste(genes, collapse = ","),
-#     No_of_genes_selected = length(genes)
-#   )
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-# 
-# print(results[, 1:3])
-# 
-
-
-######################### 4.9 Uni + CoxBoost + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- names(nonzero_coef[nonzero_coef != 0])
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 100)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
-
-
-######################### 5.1 Uni + RSF + SVM  ################################
-gc()
-genes <- row.names(res_mod)
-train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
-                        importance = T, ntree = ntree, # Use full ntree for final model
-                        proximity = T, forest = T,
-                        seed = seed, nodesize = nodesize,
-                        bootstrap = "by.root", ncores= num_detected_cores, nodedepth = nodedepth) # Use topvars for final model
-vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
-topvars <- vs.rf_model$topvars
-length(topvars)
-# 
-# genes <- topvars
-# train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-# gc()
-# set.seed(seed)
-# fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-# 
-# RS_list <- bplapply(df_list, function(x) {
-#   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#   as.numeric(predict(fit, df_data)$predicted)
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# cc_list <- bplapply(names(df_list), function(x) {
-#   RS <- RS_list[[x]]                                                                                
-#   df <- df_list[[x]]
-#   cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#   auc_values <- sapply(time_points, function(tp) {
-#     roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                            status = df$OS_STATUS,
-#                            marker = RS,
-#                            predict.time = tp,
-#                            method = "KM") # or "NNE", method for handling censoring
-#     return(roc_obj$AUC)
-#   })
-#   names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#   # Calculate Time-dependent PR-AUC at specified time points
-#   pr_auc_values <- sapply(time_points, function(tp) {
-#     binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#     pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#     return(pr_obj$auc.integral)
-#   })
-#   names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#   
-#   data.frame(
-#     Model_combination = "Univariate + RSF + SVM",
-#     Dataset_Name = x,
-#     C_index = as.numeric(cc),
-#     AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#     AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#     AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#     PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#     PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#     PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#     gene_set = paste(genes, collapse = ","),
-#     No_of_genes_selected = length(genes)
-#   )
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-# 
-# print(results[, 1:3])
-
-
 ######################### 5.2 Uni + RSF + LASSO  ################################
 
 genes <- topvars
@@ -3393,10 +2547,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-
-
-
 ######################### 5.8 Uni + RSF + SuperPC  ################################
 
 genes <- topvars
@@ -3458,133 +2608,6 @@ cc_list <- bplapply(names(df_list), function(x) {
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-
-
-########################## 5.9 Uni + RSF + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- topvars
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 100)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
-
-
 
 ######################### 6.1 Uni + StepCox + GBM  ################################
 
@@ -4094,133 +3117,7 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-######################### 6.9 Uni + StepCox + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- row.names(res.cox.coeff)
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 100)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
-
 ######################### 7.1 LASSO + StepCox  ################################
-
-
 gc()
 library(lubridate)
 library(ggsurvfit)
@@ -4312,64 +3209,6 @@ cc_list <- bplapply(names(df_list), function(x) {
 results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
-
-
-
-######################### 7.2 LASSO + SVM  ################################
-
-
-# genes <- row.names(cf_lasso_df_non_zero)
-# train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-# 
-# set.seed(seed)
-# fit = survivalsvm(Surv(OS_MONTHS, OS_STATUS) ~., data= train_data, gamma.mu = 1)
-# 
-# RS_list <- bplapply(df_list, function(x) {
-#   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#   as.numeric(predict(fit, df_data)$predicted)
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# cc_list <- bplapply(names(df_list), function(x) {
-#   RS <- RS_list[[x]]                                                                                
-#   df <- df_list[[x]]
-#   cc <- summary(coxph(Surv(OS_MONTHS, OS_STATUS) ~ RS, data = df))$concordance[1]
-#   auc_values <- sapply(time_points, function(tp) {
-#     roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                            status = df$OS_STATUS,
-#                            marker = RS,
-#                            predict.time = tp,
-#                            method = "KM") # or "NNE", method for handling censoring
-#     return(roc_obj$AUC)
-#   })
-#   names(auc_values) <- paste0("AUC_", time_points, "months") # Naming AUC values
-#   # Calculate Time-dependent PR-AUC at specified time points
-#   pr_auc_values <- sapply(time_points, function(tp) {
-#     binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#     pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#     return(pr_obj$auc.integral)
-#   })
-#   names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months") # Naming PR-AUC values
-#   
-#   data.frame(
-#     Model_combination = "LASSO + SVM",
-#     Dataset_Name = x,
-#     C_index = as.numeric(cc),
-#     AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#     AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#     AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#     PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#     PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#     PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#     gene_set = paste(genes, collapse = ","),
-#     No_of_genes_selected = length(genes)
-#   )
-# }, BPPARAM= MulticoreParam(num_detected_cores))
-# 
-# results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
-# 
-# print(results[, 1:3])
-
-
 
 ######################### 7.3 LASSO + GBM  ################################
 gc()
@@ -4504,8 +3343,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-
 ######################### 7.5 LASSO + RSF  ################################
 
 library(randomForestSRC)
@@ -4621,7 +3458,6 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
 ######################### 7.7  LASSO + SuperPC  ################################
 
 genes <- row.names(cf_lasso_df_non_zero)
@@ -4684,131 +3520,7 @@ results <- bind_rows(results, bind_rows(cc_list)) # Append to results dataframe
 
 print(results[, 1:3])
 
-
-######################### 7.8 LASSO + XGB ##################################
-#gc()
-## install.packages("mlr3")
-#library(mlr3)        # For machine learning tasks
-## remotes::install_github("mlr-org/mlr3extralearners")
-#library(mlr3extralearners)  # For survival learners, such as xgboost Cox
-#library(xgboost)
-## remotes::install_github("mlr-org/mlr3proba")
-#library(mlr3proba)
-
-#genes <- row.names(cf_lasso_df_non_zero)
-#train_data <-train[, colnames(train) %in% c(genes, "OS_MONTHS", "OS_STATUS")]
-
-## Define the learner
-#learner = mlr3::lrn("surv.xgboost.cox")
-#print(learner)
-
-#train_task <- as_task_surv(train_data, time="OS_MONTHS", event="OS_STATUS")
-
-## install.packages("ml3tuning")
-#library(mlr3tuning)
-#library(paradox)
-
-## Define a search space for hyperparameters
-#search_space <- ps(
-#  nrounds = p_int(50, 500),
-#  eta = p_dbl(0.01, 0.3),
-#  max_depth = p_int(2, 10),
-#  min_child_weight = p_dbl(1, 10),
-#  subsample = p_dbl(0.5, 1),
-#  colsample_bytree = p_dbl(0.5, 1),
-#  lambda = p_dbl(0, 1),
-#  alpha = p_dbl(0, 1)
-#)
-
-## Define the tuning instance
-#instance <- mlr3tuning::TuningInstanceBatchSingleCrit$new(
-#  task = train_task,
-#  learner = learner,
-#  resampling = rsmp("cv", folds = 5),  # Cross-validation
-#  measure = msr("surv.cindex"),       # Optimization metric
-#  search_space = search_space,
-#  terminator = trm("evals", n_evals = 100)  # Stop after 100 evaluations
-#)
-
-## Perform random search or grid search
-#tuner <- tnr("random_search")  # Or "grid_search"
-#tuner$optimize(instance)
-
-## Use the best hyperparameters
-#learner$param_set$values <- instance$result_learner_param_vals
-
-## Create train and test indices
-#set.seed(seed)  # Ensure reproducibility
-
-## Train the learner on the training data
-#learner$train(train_task, seq_len(nrow(train_data)))
-
-## Print model details
-#print(learner$model)
-
-## Get feature importance
-#print(learner$importance())
-
-## Assuming `df_list` is a list of datasets you want to apply the model to:
-#RS_list <- bplapply(df_list, function(x) {
-#  # Prepare the data (ensure to include relevant columns)
-#  df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")]
-#  predictions = learner$predict_newdata(df_data)
-#  # Predict survival using the trained xgboost model
-#  as.numeric(predictions$lp)
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Calculate C-index, AUC, and PR-AUC for each dataset
-#cc_list <- bplapply(names(df_list), function(x) {
-#  RS <- RS_list[[x]]  # Get the predicted risk scores
-#  df <- df_list[[x]]
-#  # Calculate Concordance Index (C-index)
-#  cc <- learner$predict_newdata(df)$score()
-#  # Calculate AUC for specific time points
-#  auc_values <- sapply(time_points, function(tp) {
-#    roc_obj <- survivalROC(Stime = df$OS_MONTHS,
-#                           status = df$OS_STATUS,
-#                           marker = RS,
-#                           predict.time = tp,
-#                           method = "KM") # or "NNE", method for handling censoring
-#    return(roc_obj$AUC)
-#  })
-#  names(auc_values) <- paste0("AUC_", time_points, "months")  # Naming AUC values
-#  
-#  # Calculate Time-dependent PR-AUC at specified time points
-#  pr_auc_values <- sapply(time_points, function(tp) {
-#    binary_outcome <- ifelse(df$OS_MONTHS <= tp & df$OS_STATUS == 1, 1, 0) # Event within time point vs. not
-#    pr_obj <- pr.curve(scores.class0 = RS, weights.class0 = binary_outcome, curve = FALSE)
-#    return(pr_obj$auc.integral)
-#  })
-#  names(pr_auc_values) <- paste0("PR_AUC_", time_points, "months")  # Naming PR-AUC values
-#  
-#  # Create a data frame with results
-#  data.frame(
-#    Model_combination = "Univariate + XGBoost",
-#    Dataset_Name = x,
-#    C_index = as.numeric(cc),
-#    AUC_12months = as.numeric(auc_values["AUC_12months"]), # Extract AUC values
-#    AUC_36months = as.numeric(auc_values["AUC_36months"]),
-#    AUC_60months = as.numeric(auc_values["AUC_60months"]),
-#    PR_AUC_12months = as.numeric(pr_auc_values["PR_AUC_12months"]), # Extract PR-AUC values
-#    PR_AUC_36months = as.numeric(pr_auc_values["PR_AUC_36months"]),
-#    PR_AUC_60months = as.numeric(pr_auc_values["PR_AUC_60months"]),
-#    gene_set = paste(genes, collapse = ","),
-#    No_of_genes_selected = length(genes)
-#  )
-#}, BPPARAM = MulticoreParam(num_detected_cores))
-
-## Combine the results into a single dataframe
-#results <- bind_rows(results, bind_rows(cc_list))
-
-## Print results
-#print(results[, 1:3])
-
-
 ########################## SAVE RESULTS ################################
-
-
 print(paste("Start time: ", start_time))
 end_time <- Sys.time()
 print(paste("End time: ", end_time))
