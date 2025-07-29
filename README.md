@@ -12,7 +12,7 @@ We identified and developed an integrative machine learning based prognostic gen
 
 ## Machine learning based gene selection of each of the 13 differentially expressed NARCD pathway genes
 
-Gene selection was performed using 46 machine learning and generalized linear survival model combinations. The survival models used to generate model combinations are as follows: I) Univariate cox regression, II) LASSO regression, III) Ridge regression, IV) random forest survival (RSF), V) plsRcox, VI) CoxBoost, VII) StepCox, VIII) SuperPC, and IX) Gradient boost machine (GBM).
+Gene selection was performed using 46 machine learning and generalized linear survival model combinations. The survival models used to generate model combinations are as follows: I) Univariate cox regression, II) LASSO regression, III) Ridge regression, IV) random forest survival (RSF), V) plsRcox, VI) CoxBoost, VII) StepCox, VIII) SuperPC, and IX) Gradient Boost Machine (GBM).
 
 These model combinations were applied to each of the 13 DE-NARCD pathway genes to find the genes selected for optimal survival predictive power (C-index). Hence, risk scores for each pathway were calculated, derived from the best model combinations of each pathway.
 
@@ -23,6 +23,6 @@ Logistic regression was applied to find the best 2-4 pathway combination by calc
 ## Predictive capability of the c-RCDI
 
 - c-RCDI was used to distinguish patients into high- and low-risk groups, based on the optimal cutoff from the "survival" package in R.
-- Kaplan-Meier and area under receiver operating characteristics (AUROC) analyses were performed for the predictive capability of the c-RCDI
+- Kaplan-Meier (KM) and area under receiver operating characteristics (AUROC) analyses were performed for the predictive capability of the c-RCDI
 
 ## Hierarchical clustering of the patients based on the gene signature
