@@ -1,3 +1,5 @@
+#!/usr/bin/Rscript
+
 ############ 1. Multivariate Cox regression analysis #############################
 
 ###### All RCDI geneset #######
