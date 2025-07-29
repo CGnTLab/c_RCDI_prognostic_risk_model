@@ -1,21 +1,11 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
-
 
 # Install required packages (if not already installed)
 #!pip install imbalanced-learn xgboost scikit-learn seaborn matplotlib --quiet
 
-
-# In[4]:
-
-
 #!pip install -U imbalanced-learn
-
-
-# In[2]:
-
 
 # Imports
 import pandas as pd
@@ -42,11 +32,7 @@ warnings.filterwarnings("ignore")
 from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.metrics import make_scorer
 
-
-# In[3]:
-
-
-# Load datasets (ensure these CSVs are uploaded to Colab environment)
+# load datasets
 train = pd.read_csv("../Train_RCDI_categorized.csv", index_col = 0)
 test = pd.read_csv("../Test_RCDI_categorized.csv", index_col = 0)
 val1 = pd.read_csv("../GSE39582_RCDI_categorized.csv", index_col = 0)
@@ -57,9 +43,6 @@ val1.drop(columns = ["OS_MONTHS","OS_STATUS","RCDI"], inplace=True)
 val2.drop(columns = ["OS_MONTHS","OS_STATUS","RCDI"], inplace=True)
 
 train.columns, test.columns, val1.columns, val2.columns
-
-
-# In[4]:
 
 
 # Features and Labels
@@ -78,18 +61,12 @@ y_val2 = val2["RiskClass"].map({"low": 0, "high": 1})
 X_train.shape, y_train.shape, X_test.shape, y_test.shape, X_val1.shape, y_val1.shape, X_val2.shape, y_val2.shape
 
 
-# In[5]:
-
-
 # Standardization
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 X_val1 = scaler.transform(X_val1)
 X_val2 = scaler.transform(X_val2)
-
-
-# In[6]:
 
 
 # Define classifiers and hyperparameter grids
@@ -118,244 +95,7 @@ classifiers = {
     "NaiveBayes": (GaussianNB(), {})
 }
 
-
-# # Function to train and evaluate each classifier
-# results = {}
-# roc_data = {}
-# best_models = {}
-# val_results = {}
-# train_roc_data = {}
-# performance_table = []
-# 
-# cv10 = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-# 
-# # Define scoring metrics
-# scoring = {
-#     'accuracy': 'accuracy',
-#     'precision': 'precision',
-#     'recall': 'recall',
-#     'f1': 'f1',
-#     'roc_auc': 'roc_auc',
-#     'mcc': make_scorer(matthews_corrcoef)
-# }
-# 
-# for name, (clf, params) in classifiers.items():
-#     print(f"\nTraining {name}...")
-#     pipe = ImbPipeline([
-#         ("smote", SMOTE()),
-#         ("clf", clf)
-#     ])
-#     
-#     search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=5, n_iter=10, n_jobs=-1, random_state=42)
-#     search.fit(X_train, y_train)
-#     best_model = search.best_estimator_
-# 
-#     best_models[name] = best_model
-# 
-# 
-#     cv_scores = cross_val_score(
-#         best_model, X_train, y_train,
-#         cv=cv10,
-#         scoring="roc_auc",
-#         n_jobs=-1
-#     )
-#     print(f"{name} - 10-Fold Cross-Validated Train AUC: Mean = {cv_scores.mean():.4f}, Std = {cv_scores.std():.4f}")
-#     
-#     # TRAIN
-#     y_train_pred = best_model.predict(X_train)
-#     y_train_proba = best_model.predict_proba(X_train)[:, 1]
-#     train_auc = roc_auc_score(y_train, y_train_proba)
-#     train_roc_data[name] = train_auc
-# 
-#     # TEST
-#     y_test_pred = best_model.predict(X_test)
-#     y_test_proba = best_model.predict_proba(X_test)[:, 1]
-#     test_auc = roc_auc_score(y_test, y_test_proba)
-#     fpr, tpr, _ = roc_curve(y_test, y_test_proba)
-#     roc_data[name] = (fpr, tpr)
-# 
-#     results[name] = {
-#         "Train AUC": train_auc,
-#         "Test AUC": test_auc
-#     }
-# 
-#     # VALIDATIONS
-#     val_metrics = {}
-#     for val_name, (X_val, y_val) in zip(["GSE39582", "GSE161158"], [(X_val1, y_val1), (X_val2, y_val2)]):
-#         y_val_pred = best_model.predict(X_val)
-#         y_val_proba = best_model.predict_proba(X_val)[:, 1]
-#         val_auc = roc_auc_score(y_val, y_val_proba)
-#         val_results[(name, val_name)] = val_auc
-#         val_metrics[val_name] = {
-#             "accuracy": accuracy_score(y_val, y_val_pred),
-#             "precision": precision_score(y_val, y_val_pred),
-#             "recall": recall_score(y_val, y_val_pred),
-#             "f1": f1_score(y_val, y_val_pred),
-#             "mcc": matthews_corrcoef(y_val, y_val_pred),
-#             "auc": val_auc
-#         }
-# 
-#      # 10-fold CV AUC with SMOTE in pipeline
-#     cv_scores = cross_val_score(
-#         best_model,
-#         X_train,
-#         y_train,
-#         cv=10,
-#         scoring="roc_auc",
-#         n_jobs=-1
-#     )
-#     
-#     # Collect summary row
-#     performance_table.append({
-#         "Model": name,
-#         "Train Accuracy": accuracy_score(y_train, y_train_pred),
-#         "Train Precision": precision_score(y_train, y_train_pred),
-#         "Train Recall": recall_score(y_train, y_train_pred),
-#         "Train F1": f1_score(y_train, y_train_pred),
-#         "Train MCC": matthews_corrcoef(y_train, y_train_pred),
-# 
-#         "Test Accuracy": accuracy_score(y_test, y_test_pred),
-#         "Test Precision": precision_score(y_test, y_test_pred),
-#         "Test Recall": recall_score(y_test, y_test_pred),
-#         "Test F1": f1_score(y_test, y_test_pred),
-#         "Test MCC": matthews_corrcoef(y_test, y_test_pred),
-# 
-#         "GSE39582 Accuracy": val_metrics["GSE39582"]["accuracy"],
-#         "GSE39582 Precision": val_metrics["GSE39582"]["precision"],
-#         "GSE39582 Recall": val_metrics["GSE39582"]["recall"],
-#         "GSE39582 F1": val_metrics["GSE39582"]["f1"],
-#         "GSE39582 MCC": val_metrics["GSE39582"]["mcc"],
-# 
-#         "GSE161158 Accuracy": val_metrics["GSE161158"]["accuracy"],
-#         "GSE161158 Precision": val_metrics["GSE161158"]["precision"],
-#         "GSE161158 Recall": val_metrics["GSE161158"]["recall"],
-#         "GSE161158 F1": val_metrics["GSE161158"]["f1"],
-#         "GSE161158 MCC": val_metrics["GSE161158"]["mcc"],
-# 
-#         "CV10 Mean AUC": cv_scores.mean(),
-#         "CV10 Std AUC": cv_scores.std(),
-#         "Best Params": search.best_params_
-#     })
-
-# from sklearn.metrics import make_scorer
-# from sklearn.model_selection import cross_validate, StratifiedKFold
-# from sklearn.base import ClassifierMixin
-# 
-# results = {}
-# roc_data = {}
-# best_models = {}
-# val_results = {}
-# train_roc_data = {}
-# performance_table = []
-# 
-# cv10 = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-#         
-# # Define scoring metrics
-# scoring = {
-#     'accuracy': 'accuracy',
-#     'precision': 'precision',
-#     'recall': 'recall',
-#     'f1': 'f1',
-#     'roc_auc': 'roc_auc',
-#     'mcc': make_scorer(matthews_corrcoef)
-# }
-# 
-# for name, (clf, params) in classifiers.items():
-#     print(f"\nTraining {name}...")
-# 
-#     pipe = ImbPipeline([
-#         ("smote", SMOTE()),
-#         ("clf", clf)
-#     ])
-#         
-#     search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=5, n_iter=10, n_jobs=-1, random_state=42)
-#     search.fit(X_train, y_train)
-#     best_model = search.best_estimator_
-#     best_models[name] = best_model
-# 
-#     # Cross-validated metrics on training data
-#     cv_results = cross_validate(
-#         best_model, X_train, y_train,
-#         scoring=scoring, cv=cv10, n_jobs=-1
-#     )
-# 
-# 
-#     # Store CV AUC
-#     train_roc_data[name] = cv_results['test_roc_auc'].mean()
-#     print(f"{name} - 10-Fold Cross-Validated AUC: Mean = {train_roc_data[name]:.4f}, Std = {cv_results['test_roc_auc'].std():.4f}")
-# 
-#     # TEST metrics
-#     y_test_pred = best_model.predict(X_test)
-#     y_test_proba = best_model.predict_proba(X_test)[:, 1]
-#     test_auc = roc_auc_score(y_test, y_test_proba)
-#     fpr, tpr, _ = roc_curve(y_test, y_test_proba)
-#     roc_data[name] = (fpr, tpr)
-# 
-#     results[name] = {
-#         "Train AUC": train_roc_data[name],
-#         "Test AUC": test_auc
-#     }
-# 
-#     # VALIDATION metrics
-#     val_metrics = {}
-#     for val_name, (X_val, y_val) in zip(["GSE39582", "GSE161158"], [(X_val1, y_val1), (X_val2, y_val2)]):
-#         y_val_pred = best_model.predict(X_val)
-#         y_val_proba = best_model.predict_proba(X_val)[:, 1]
-#         val_auc = roc_auc_score(y_val, y_val_proba)
-#         val_results[(name, val_name)] = val_auc
-#         val_metrics[val_name] = {
-#             "accuracy": accuracy_score(y_val, y_val_pred),
-#             "precision": precision_score(y_val, y_val_pred),
-#             "recall": recall_score(y_val, y_val_pred),
-#             "f1": f1_score(y_val, y_val_pred),
-#             "mcc": matthews_corrcoef(y_val, y_val_pred),
-#             "auc": val_auc
-#         }
-# 
-#     # Summary row for performance_table
-#     performance_table.append({
-#         "Model": name,
-# 
-#         # Train (CV-based)
-#         "Train Accuracy": cv_results['test_accuracy'].mean(),
-#         "Train Precision": cv_results['test_precision'].mean(),
-#         "Train Recall": cv_results['test_recall'].mean(),
-#         "Train F1": cv_results['test_f1'].mean(),
-#         "Train MCC": cv_results['test_mcc'].mean(),
-#         "Train AUC": cv_results['test_roc_auc'].mean(),
-# 
-#         # Test
-#         "Test Accuracy": accuracy_score(y_test, y_test_pred),
-#         "Test Precision": precision_score(y_test, y_test_pred),
-#         "Test Recall": recall_score(y_test, y_test_pred),
-#         "Test F1": f1_score(y_test, y_test_pred),
-#         "Test MCC": matthews_corrcoef(y_test, y_test_pred),
-#         "Test AUC": test_auc,
-# 
-#         # Validation sets
-#         "GSE39582 Accuracy": val_metrics["GSE39582"]["accuracy"],
-#         "GSE39582 Precision": val_metrics["GSE39582"]["precision"],
-#         "GSE39582 Recall": val_metrics["GSE39582"]["recall"],
-#         "GSE39582 F1": val_metrics["GSE39582"]["f1"],
-#         "GSE39582 MCC": val_metrics["GSE39582"]["mcc"],
-#         "GSE39582 AUC": val_metrics["GSE39582"]["auc"],
-# 
-#         "GSE161158 Accuracy": val_metrics["GSE161158"]["accuracy"],
-#         "GSE161158 Precision": val_metrics["GSE161158"]["precision"],
-#         "GSE161158 Recall": val_metrics["GSE161158"]["recall"],
-#         "GSE161158 F1": val_metrics["GSE161158"]["f1"],
-#         "GSE161158 MCC": val_metrics["GSE161158"]["mcc"],
-#         "GSE161158 AUC": val_metrics["GSE161158"]["auc"],
-# 
-#         # Cross-Validation AUC Stats and Best Params
-#         "CV10 AUC Mean": cv_results['test_roc_auc'].mean(),
-#         "CV10 AUC Std": cv_results['test_roc_auc'].std(),
-#         "Best Params": search.best_params_
-#     })
-
-# In[11]:
-
-
+## Use cross validation for training dataset
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.base import ClassifierMixin
@@ -523,14 +263,7 @@ for name, (clf, params) in classifiers.items():
         train_roc_data[name] = np.nan
 
 
-# In[12]:
-
-
 pd.DataFrame(performance_table)
-
-
-# In[13]:
-
 
 df_perf = pd.DataFrame(performance_table)
 
@@ -552,16 +285,13 @@ plot_df[['Dataset', 'Metric']] = plot_df['Metric_Dataset'].str.extract(r'(\w+)\s
 plot_df.drop(columns='Metric_Dataset', inplace=True)
 
 
-# In[14]:
-
-
+## Plot accuracy - recall barplots
 import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Set style
 sns.set(style="whitegrid", context="talk")
 
-# Plot F1 and MCC separately for clarity
 for metric in ['Accuracy', 'Recall']:
     plt.figure(figsize=(14, 6))
     sns.barplot(
@@ -578,88 +308,14 @@ for metric in ['Accuracy', 'Recall']:
     plt.tight_layout()
     plt.show()
 
-
-# In[15]:
-
-
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-# Set style
-sns.set(style="whitegrid", context="talk")
-
-# Create subplots: 1 column, 2 rows
-fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharex=True, sharey=True)
-
-# Metrics to plot
-metrics = ['Accuracy', 'Recall']
-colors = sns.color_palette("Set2")
-
-# Plot each metric
-for i, metric in enumerate(metrics):
-    ax = axes[i]
-    sns.barplot(
-        data=plot_df[plot_df['Metric'] == metric],
-        x="Model", y="Score", hue="Dataset",
-        palette=colors,
-        ax=ax
-    )
-    ax.set_title(f"{metric} Score Across Datasets", fontsize=16)
-    ax.set_ylabel(f"{metric} Score", fontsize=14)
-    ax.set_xlabel("")  # We'll set xlabel only once below
-    ax.set_ylim(0, 1)
-    ax.tick_params(axis='x', rotation=45)
-
-# Remove individual legends
-for ax in axes:
-    ax.legend_.remove()
-
-# Add shared legend outside the plot
-handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, title="Dataset", loc='upper center', bbox_to_anchor=(0.5, 1.02),
-           ncol=len(labels), fontsize=12, title_fontsize=12)
-
-# Set shared x-label
-axes[-1].set_xlabel("Classifier", fontsize=14)
-
-plt.tight_layout(rect=[0, 0, 1, 0.97])  # Leave space for legend
-plt.show()
-
-fig.savefig("classifier_accuracy_recall.png", dpi=600, bbox_inches='tight')
-
-
-# In[58]:
-
-
-plt.figure(figsize=(14, 6))
-sns.scatterplot(
-    data=plot_df,
-    x="Model", y="Score",
-    hue="Dataset", style="Metric",
-    s=150, palette="Set1", edgecolor="black"
-)
-plt.title("Classifier Performance Across Datasets", fontsize=16)
-plt.ylabel("Score", fontsize=14)
-plt.xlabel("Classifier", fontsize=14)
-plt.xticks(rotation=45, ha='right')
-plt.ylim(0, 1)
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.tight_layout()
-plt.show()
-
-
-# In[16]:
-
-
+## Save the performance table
 performance_table = pd.DataFrame(performance_table)
 
 performance_table.to_csv("model_performances.csv", index=False)
 performance_table.head()
 
 
-# In[23]:
-
-
+## Create AURCO plots for the four datasets
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import StratifiedKFold
 import numpy as np
@@ -763,31 +419,6 @@ roc_val2 = compute_standard_roc(best_models, X_val2, y_val2)
 plot_standard_roc(roc_val2, "ROC Curve - GSE161158", "roc_gse161158.png")
 
 
-# # Create a summary DataFrame
-# summary_auc = pd.DataFrame(columns=["Train", "Test", "GSE39582", "GSE161158"])
-# 
-# # Populate the DataFrame
-# for model_name in best_models.keys():
-#     train_auc = auc(*roc_train[model_name])
-#     test_auc = auc(*roc_test[model_name])
-#     val1_auc = auc(*roc_val1[model_name])
-#     val2_auc = auc(*roc_val2[model_name])
-# 
-#     summary_auc.loc[model_name] = [train_auc, test_auc, val1_auc, val2_auc]
-# 
-# # Round for clarity
-# summary_auc = summary_auc.round(3)
-# 
-# # Save to CSV (or Excel)
-# summary_auc.to_csv("classifier_auc_summary.csv")
-# # Alternatively:
-# # summary_auc.to_excel("classifier_auc_summary.xlsx")
-# 
-# # Optional: display the table
-# print(summary_auc)
-
-# In[24]:
-
 
 # Create summary DataFrame for AUC scores
 summary_auc = pd.DataFrame(columns=["Train", "Test", "GSE39582", "GSE161158"])
@@ -815,9 +446,6 @@ summary_auc.to_csv("classifier_auc_summary.csv")
 print(summary_auc)
 
 
-# In[25]:
-
-
 # Feature importance plots for RF and XGB
 for name in ["RandomForest", "XGBoost"]:
     model = best_models[name].named_steps['clf']
@@ -831,8 +459,6 @@ for name in ["RandomForest", "XGBoost"]:
     plt.savefig(f"feature_importance_{name}.png", dpi=600)
     plt.show()
 
-
-# In[ ]:
 
 
 
