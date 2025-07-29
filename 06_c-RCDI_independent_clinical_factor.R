@@ -1,6 +1,10 @@
 #!/usr/bin/Rscript
 
 library(dplyr)
+library(survival)
+library(survminer)
+library(timeROC)
+
 columns <- c("Sample","Sex", "Age_group", "Tumor_stage")
 clinical_emtab <- read_xlsx("../../E-MTAB-12862/data/Supplementary_Table_01.xlsx", sheet=1)
 clinical_emtab <- clinical_emtab[,c("RNA Tumor Sample Barcode", "Sex", "Age group","Tumour Stage")]
