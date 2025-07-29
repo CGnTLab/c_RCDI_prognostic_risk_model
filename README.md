@@ -1,4 +1,4 @@
-# c-RCDI Development
+# c-RCDI Prognostic Signature
 
 ## Research article details:
 
