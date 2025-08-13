@@ -71,20 +71,20 @@ X_val2 = scaler.transform(X_val2)
 
 # Define classifiers and hyperparameter grids
 classifiers = {
-    "LogisticRegression": (LogisticRegression(max_iter=1000), {
+    "LogisticRegression": (LogisticRegression(max_iter=1000, random_state=42), {
         "clf__C": np.logspace(-3, 3, 10),
         "clf__penalty": ["l2"]
     }),
-    "SVM": (SVC(probability=True), {
+    "SVM": (SVC(probability=True, random_state=42), {
         "clf__C": [0.1, 1, 10, 100],
         "clf__kernel": ["linear", "rbf"]
     }),
-    "RandomForest": (RandomForestClassifier(), {
+    "RandomForest": (RandomForestClassifier(random_state=42), {
         "clf__n_estimators": [100, 200, 500],
         "clf__max_depth": [None, 10, 20],
         "clf__min_samples_split": [2, 5, 10]
     }),
-    "XGBoost": (XGBClassifier(use_label_encoder=False, eval_metric='logloss'), {
+    "XGBoost": (XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42), {
         "clf__n_estimators": [100, 200],
         "clf__max_depth": [3, 5, 7],
         "clf__learning_rate": [0.01, 0.1, 0.2]
@@ -126,11 +126,11 @@ for name, (clf, params) in classifiers.items():
     try:
         if name == "XGBoost":
             # Apply SMOTE externally
-            sm = SMOTE()
+            sm = SMOTE(random_state=42)
             X_train_res, y_train_res = sm.fit_resample(X_train, y_train)
 
             pipe = ImbPipeline([("clf", clf)])
-            search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=5, n_iter=10, n_jobs=-1, random_state=42)
+            search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=cv10, n_iter=10, n_jobs=-1, random_state=42)
             search.fit(X_train_res, y_train_res)
             best_model = search.best_estimator_
 
@@ -167,10 +167,10 @@ for name, (clf, params) in classifiers.items():
 
         else:
             pipe = ImbPipeline([
-                ("smote", SMOTE()),
+                ("smote", SMOTE(random_state=42)),
                 ("clf", clf)
             ])
-            search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=5, n_iter=10, n_jobs=-1, random_state=42)
+            search = RandomizedSearchCV(pipe, param_distributions=params, scoring="roc_auc", cv=cv10, n_iter=10, n_jobs=-1, random_state=42)
             search.fit(X_train, y_train)
             best_model = search.best_estimator_
 
@@ -332,7 +332,7 @@ for name, model in best_models.items():
     aucs = []
 
     if name == "XGBoost":
-        X_train_res, y_train_res = SMOTE().fit_resample(X_train, y_train)
+        X_train_res, y_train_res = SMOTE(random_state=42).fit_resample(X_train, y_train)
         X_data, y_data = X_train_res, y_train_res
     else:
         X_data, y_data = X_train, y_train
