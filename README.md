@@ -1,16 +1,16 @@
-# c-RCDI Prognostic Signature
+# c-RCDI Prognostic risk model
 
 ## Research article details:
 
-Title: Development of an integrative machine learning-based combined prognostic gene signature based on non-apoptotic regulated cell death pathways to improve patient survival in colorectal cancer
+Title: Non-apoptotic regulated cell death based prognostic risk model for colorectal cancer using machine learning guided two-step framework
 
-Authors: Avik Sengupta, Rahul Kumar# [# corresponding author]
+Authors: Avik Sengupta, Sushree Sangita Kar, Rahul Kumar# [# corresponding author]
 
 Affiliation: Computational Genomics & Transcriptomics (CG&T) laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Near NH-65, Vill. Kandi, Sangareddy, Telangana-502285, India
 
 ## Overview
 
-We identified and developed an integrative machine learning based prognostic gene signature, derived from 13 combined non-apoptotic regulated cell death pathway genes, in colorectal cancer (CRC).
+We identified and developed an integrative machine learning based prognostic risk model, derived from 13 combined non-apoptotic regulated cell death pathway genes, in colorectal cancer (CRC).
 
 ## Machine learning based gene selection of each of the 13 differentially expressed NARCD pathway genes
 
@@ -20,22 +20,22 @@ These model combinations were applied to each of the 13 DE-NARCD pathway genes t
 
 ## Identifying the best combined model of the NARCD pathways / development of c-RCDI
 
-Logistic regression was applied to find the best 2-4 pathway combination by calculating the C-indices for each pathway(s) combination. The combined risk score was calculated further to get the combined risk score, which we named as the combined regulated cell death index (c-RCDI), formed from a signature of 43 genes.
+Logistic regression was applied to find the best 2-4 pathway combination by calculating the C-indices for each pathway(s) combination. The combined risk score was calculated further to get the combined risk score, which we named as the combined regulated cell death index (c-RCDI), formed from a prognostic risk model of 43 genes.
 
 ## Predictive capability of the c-RCDI
 
-- c-RCDI was used to distinguish patients into high- and low-risk groups, based on the optimal cutoff from the "survival" package in R.
+- c-RCDI was used to distinguish patients into high- and low-risk classes, based on the optimal cutoff from the "survival" package in R.
 - Kaplan-Meier (KM) and area under receiver operating characteristics (AUROC) analyses were performed for the predictive capability of the c-RCDI
 
-## Hierarchical clustering of the patients based on the gene signature
+## Hierarchical clustering of the patients based on c-RCDI
 
-Based on the gene expression of the 43 signature genes, we performed Hierarchical clustering of the patient samples to see the distinction based on the 43 genes. Also ,we extrapolated the clusters with the risk groups to compare and correlate them.
+Based on the gene expression of the 43 c-RCDI genes, we performed Hierarchical clustering of the patient samples to see the distinction based on the 43 genes. Also ,we extrapolated the clusters with the risk classes to compare and correlate them.
 
-## 43 genes evaluation and validation of the 43 signature genes
+## 43 genes evaluation and validation of the c-RCDI genes
 
-We performed the following to evaluate and validate the 43 signature genes:
+We performed the following to evaluate and validate the 43 c-RCDI genes:
   
-  - Multivariate Cox regression analysis of the signature genes
+  - Multivariate Cox regression analysis of the prognostic risk model genes
   - Protein-protein interaction (PPI) network analysis using "STRING database" and "Cytoscape"
   - Single-cell gene expression analysis using "Seurat" package in R
   - Gene dependency analysis using DepMap CRISPR/Cas9 knockout (KO) data
@@ -50,7 +50,7 @@ To evaluate the prognostic potential of the c-RCDI as an independent clinical fa
   - AUROC analysis of the clinical factors
   - Nomogram analysis
 
-## Functional analysis of high- and low-risk groups
+## Functional analysis of high- and low-risk classes
 
 ### Immune cell enrichment analysis
 
@@ -58,13 +58,13 @@ Using CIBERSORT algorithm from CIBSERSORTx website, we calculated the absolute i
 
 ### Tumor immunotherapy response analysis
 
-Using the TIDE algorithm from the TIDE website, we identified the responders vs non-responders patients among the risk groups, to further evaluate the differences in immunotherapy response.
+Using the TIDE algorithm from the TIDE website, we identified the responders vs non-responders patients among the risk classes, to further evaluate the differences in immunotherapy response.
 
 ### Drug sensitivity analysis
 
-Using GDSC2 data and "oncoPredict()" tool in R, we calculated the drugs' IC50 values to determine their effectiveness against each patient of the high- and low-risk groups.
+Using GDSC2 data and "oncoPredict()" tool in R, we calculated the drugs' IC50 values to determine their effectiveness against each patient of the high- and low-risk classes.
 
-## Machine learning analysis
+## Machine learning analysis to evaluate the class distinction capability of the c-RCDI
 
 To evaluate our c-RCDI-based distinction of the patients, we further applied six classification machine learning models to the 43 genes' gene expression and c-RCDI to predict the classes.
 
