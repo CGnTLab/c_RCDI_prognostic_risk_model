@@ -459,7 +459,356 @@ for name in ["RandomForest", "XGBoost"]:
     plt.savefig(f"feature_importance_{name}.png", dpi=600)
     plt.show()
 
+# CONSOLIDATED PERMUTATION AND SHAP FEATURE IMPORTANCE ANALYSIS
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+from sklearn.inspection import permutation_importance
+import shap
+from imblearn.over_sampling import SMOTE
+from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
+import warnings
+warnings.filterwarnings("ignore")
+
+plt.rcParams.update({
+    'font.family': 'Arial',
+    'font.size': 7,
+    'axes.titlesize': 8,
+    'axes.labelsize': 7,
+    'xtick.labelsize': 6,
+    'ytick.labelsize': 6,
+    'legend.fontsize': 6,
+    'figure.titlesize': 8,
+    'figure.dpi': 300,
+    'savefig.dpi': 300,
+    'savefig.format': 'svg',
+    'figure.figsize': (3.5, 2.8),
+    'axes.linewidth': 0.5,
+    'lines.linewidth': 1.0,
+    'patch.linewidth': 0.5
+})
+
+feature_names = train.drop(columns=["RiskClass"]).columns.tolist()
+
+def normalize_per_model(df, model_col="Model", imp_col="Importance"):
+    df = df.copy()
+    for model in df[model_col].unique():
+        mask = df[model_col] == model
+        vals = df.loc[mask, imp_col]
+        minv, maxv = vals.min(), vals.max()
+        if maxv > minv:
+            df.loc[mask, imp_col] = (vals - minv) / (maxv - minv)
+    return df
+
+def compute_permutation_all(models_dict, X, y, feature_names, scoring='roc_auc', n_repeats=10, sample_size=1000):
+    from sklearn.base import BaseEstimator, ClassifierMixin
+
+    X_eval, _, y_eval, _ = train_test_split(
+        X, y,
+        train_size=min(sample_size, len(X)),
+        stratify=y,
+        random_state=42
+    )
+    all_results = []
+
+    class XGBWrapper(BaseEstimator, ClassifierMixin):
+        """Robust sklearn-compatible wrapper for XGBoost classifiers."""
+        def __init__(self, xgb_model):
+            # Ensure we store the actual model, not a dict or other container
+            if hasattr(xgb_model, 'predict') and hasattr(xgb_model, 'fit'):
+                self.xgb_model = xgb_model
+            else:
+                raise ValueError(f"Expected XGBoost model with predict/fit methods, got {type(xgb_model)}")
+
+        def fit(self, X, y, **kwargs):
+            self.xgb_model.fit(X, y, **kwargs)
+            return self
+
+        def predict(self, X):
+            return self.xgb_model.predict(X)
+
+        def predict_proba(self, X):
+            if hasattr(self.xgb_model, "predict_proba"):
+                return self.xgb_model.predict_proba(X)
+            else:
+                # Fallback for models that don't have predict_proba
+                preds = self.xgb_model.predict(X)
+                if preds.ndim == 1:
+                    return np.column_stack([1 - preds, preds])
+                return preds
+
+        def get_params(self, deep=True):
+            if hasattr(self.xgb_model, 'get_params'):
+                return self.xgb_model.get_params(deep=deep)
+            return {}
+
+        def set_params(self, **params):
+            if hasattr(self.xgb_model, 'set_params'):
+                self.xgb_model.set_params(**params)
+            return self
+
+        @property
+        def classes_(self):
+            if hasattr(self.xgb_model, 'classes_'):
+                return self.xgb_model.classes_
+            return np.array([0, 1])  # Default binary classes
+
+        def _estimator_type(self):
+            return "classifier"
+
+        def __sklearn_tags__(self):
+            return {
+                "binary_only": False,
+                "multilabel": False,
+                "multioutput": False,
+                "requires_y": True,
+                "classifier": True,
+                "regressor": False,
+            }
+
+    def extract_final_estimator(model):
+        """Recursively extract the trained estimator from pipelines or nested structures."""
+        if model is None:
+            return None
+            
+        # Handle pipeline structures
+        if hasattr(model, "named_steps"):
+            if "clf" in model.named_steps:
+                return extract_final_estimator(model.named_steps["clf"])
+            # Try other common step names
+            for step_name in ["classifier", "estimator", "model"]:
+                if step_name in model.named_steps:
+                    return extract_final_estimator(model.named_steps[step_name])
+                    
+        # Handle GridSearchCV/RandomizedSearchCV
+        if hasattr(model, "best_estimator_"):
+            return extract_final_estimator(model.best_estimator_)
+            
+        # Handle dictionary storage (your case)
+        if isinstance(model, dict):
+            # Look for model-like objects in the dictionary
+            for key, value in model.items():
+                if hasattr(value, "predict") and hasattr(value, "fit"):
+                    return extract_final_estimator(value)
+                elif hasattr(value, "named_steps"):
+                    return extract_final_estimator(value)
+                elif hasattr(value, "best_estimator_"):
+                    return extract_final_estimator(value)
+                    
+        # If it has predict method, assume it's the final estimator
+        if hasattr(model, "predict") and hasattr(model, "fit"):
+            return model
+            
+        return None
+
+    for name, model in models_dict.items():
+        print(f"Calculating permutation importance for {name}...")
+        try:
+            clf = extract_final_estimator(model)
+            if clf is None:
+                print(f"  Could not extract valid estimator from {name}")
+                continue
+
+            # Debug: print what we extracted
+            print(f"  Extracted estimator type: {type(clf)}")
+
+            # For XGBoost, wrap it properly
+            model_name_lower = name.lower()
+            if "xgb" in model_name_lower or "xgboost" in model_name_lower:
+                print(f"  Wrapping {name} with XGBWrapper")
+                try:
+                    clf = XGBWrapper(clf)
+                    print(f"  Successfully wrapped, wrapper type: {type(clf)}")
+                except Exception as wrap_ex:
+                    print(f"  Failed to wrap XGBoost: {wrap_ex}")
+                    continue
+
+            # Ensure clf is not a dict before proceeding
+            if isinstance(clf, dict):
+                print(f"  Error: Extracted object is still a dict for {name}")
+                continue
+
+            result = permutation_importance(
+                clf,
+                X_eval,
+                y_eval,
+                scoring=scoring,
+                n_repeats=n_repeats,
+                random_state=42,
+                n_jobs=-1
+            )
+
+            df = pd.DataFrame({
+                'Gene': feature_names,
+                'Importance': result.importances_mean,
+                'Std': result.importances_std,
+                'Model': name
+            })
+            all_results.append(df)
+            print(f"  ✓ Completed {name}")
+
+        except Exception as ex:
+            print(f"  ✗ Error with {name}: {ex}")
+            import traceback
+            traceback.print_exc()
+
+    if not all_results:
+        raise RuntimeError("No permutation results computed.")
+    result = pd.concat(all_results, axis=0)
+    return normalize_per_model(result)
+
+def compute_shap_all(models_dict, X, feature_names, sample_size=200, background_size=20):
+    X_sample = X if len(X) <= sample_size else X[np.random.choice(len(X), sample_size, replace=False)]
+    all_results = []
+    
+    def extract_final_estimator(model):
+        """Same extraction logic as above"""
+        if model is None:
+            return None
+        if hasattr(model, "named_steps"):
+            if "clf" in model.named_steps:
+                return extract_final_estimator(model.named_steps["clf"])
+            for step_name in ["classifier", "estimator", "model"]:
+                if step_name in model.named_steps:
+                    return extract_final_estimator(model.named_steps[step_name])
+        if hasattr(model, "best_estimator_"):
+            return extract_final_estimator(model.best_estimator_)
+        if isinstance(model, dict):
+            for key, value in model.items():
+                if hasattr(value, "predict") and hasattr(value, "fit"):
+                    return extract_final_estimator(value)
+                elif hasattr(value, "named_steps"):
+                    return extract_final_estimator(value)
+                elif hasattr(value, "best_estimator_"):
+                    return extract_final_estimator(value)
+        if hasattr(model, "predict") and hasattr(model, "fit"):
+            return model
+        return None
+    
+    for name, model in models_dict.items():
+        print(f"Calculating SHAP importance for {name}...")
+        try:
+            clf = extract_final_estimator(model)
+            if clf is None:
+                print(f"  Could not extract valid estimator from {name}")
+                continue
+                
+            print(f"  Extracted estimator type: {type(clf)}")
+            
+            # Choose best explainer per model
+            if "RandomForest" in name or "XGBoost" in name:
+                explainer = shap.TreeExplainer(clf)
+                shap_values = explainer.shap_values(X_sample)
+            elif "LogisticRegression" in name:
+                background = shap.sample(X, min(background_size, len(X)))
+                explainer = shap.LinearExplainer(clf, background, feature_perturbation="interventional")
+                shap_values = explainer.shap_values(X_sample)
+            else:
+                # fallback for SVM, KNN, NaiveBayes
+                if len(X) > background_size:
+                    kmeans = KMeans(n_clusters=background_size, random_state=42)
+                    kmeans.fit(X)
+                    background = kmeans.cluster_centers_
+                else:
+                    background = X
+                explainer = shap.KernelExplainer(clf.predict_proba, background, approximate=True)
+                shap_values = explainer.shap_values(X_sample)
+
+            # Robust aggregation
+            if isinstance(shap_values, list):
+                shap_abs = np.mean([np.abs(sv) for sv in shap_values], axis=0)
+            elif shap_values.ndim == 3:
+                shap_abs = np.mean(np.abs(shap_values), axis=(0, 2))
+            elif shap_values.ndim == 2:
+                shap_abs = np.mean(np.abs(shap_values), axis=0)
+            else:
+                shap_abs = np.mean(np.abs(shap_values.reshape(shap_values.shape[0], -1)), axis=0)
+
+            df = pd.DataFrame({'Gene': feature_names, 'Importance': shap_abs, 'Model': name})
+            all_results.append(df)
+            print(f"  ✓ Completed {name}")
+        except Exception as ex:
+            print(f"  ✗ Error with {name}: {ex}")
+
+    if not all_results:
+        raise RuntimeError("No SHAP results computed.")
+    result = pd.concat(all_results, axis=0)
+    return normalize_per_model(result)
+
+def create_publication_plot(data, title, filename, plot_type="permutation"):
+    mean_importance = data.groupby('Gene')['Importance'].mean().sort_values(ascending=False)
+    top_genes = mean_importance.head(10).index.tolist()
+    plot_data = data[data['Gene'].isin(top_genes)].copy()
+    plot_data['Gene'] = pd.Categorical(plot_data['Gene'], categories=top_genes, ordered=True)
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+    sns.barplot(data=plot_data, x='Gene', y='Importance', hue='Model',
+                palette='Set2', ax=ax, edgecolor='black', linewidth=0.3)
+    ax.set_title(title, fontsize=8, fontweight='bold', pad=10)
+    ax.set_xlabel('Genes', fontsize=7, fontweight='bold')
+    ax.set_ylabel(f'{plot_type.capitalize()} Importance', fontsize=7, fontweight='bold')
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=6)
+    ax.tick_params(axis='y', labelsize=6)
+    legend = ax.legend(title='Model', fontsize=5, title_fontsize=6, frameon=True)
+    legend.get_frame().set_linewidth(0.5)
+    legend.get_frame().set_edgecolor('black')
+    ax.grid(True, alpha=0.3, linewidth=0.3)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_linewidth(0.5)
+        spine.set_color('black')
+    plt.tight_layout()
+    plt.savefig(f"{filename}.svg", format='svg', bbox_inches='tight', pad_inches=0.05,
+                facecolor='white', edgecolor='none')
+    plt.show()
+    return fig, ax
+
+def create_summary_table(data, filename, analysis_type):
+    pivot_table = data.pivot(index='Gene', columns='Model', values='Importance')
+    pivot_table['Mean_Importance'] = pivot_table.mean(axis=1)
+    pivot_table = pivot_table.sort_values('Mean_Importance', ascending=False)
+    pivot_table = pivot_table.round(4)
+    model_cols = [col for col in pivot_table.columns if col != 'Mean_Importance']
+    pivot_table = pivot_table[model_cols + ['Mean_Importance']]
+    pivot_table.to_csv(f"{filename}.csv")
+    print(f"\n{analysis_type} Summary Table (Top 10):")
+    print("="*50)
+    print(pivot_table.head(10).to_string())
+    return pivot_table
+
+print("Starting Feature Importance Analysis (Permutation + SHAP, all models, normalized)...")
+print("="*50)
+
+try:
+    print("\n1. Computing Permutation Importance all models...")
+    perm_data = compute_permutation_all(best_models, X_train, y_train, feature_names,
+                                        scoring='roc_auc', n_repeats=10, sample_size=1000)
+    create_publication_plot(perm_data,
+                            'Permutation Feature Importance (Top 10 Genes, Normalized)',
+                            'perm_importance_allmodels', 'permutation')
+    perm_table = create_summary_table(perm_data, 'perm_importance_allmodels', 'Permutation Importance')
+except Exception as e:
+    print(f"Permutation Importance Analysis failed: {e}")
+
+try:
+    print("\n2. Computing SHAP Importance all models...")
+    shap_data = compute_shap_all(best_models, X_train, feature_names,
+                                 sample_size=200, background_size=20)
+    create_publication_plot(shap_data,
+                            'SHAP Feature Importance (Top 10 Genes, Normalized)',
+                            'shap_importance_allmodels', 'SHAP')
+    shap_table = create_summary_table(shap_data, 'shap_importance_allmodels', 'SHAP Importance')
+except Exception as e:
+    print(f"SHAP Importance Analysis failed: {e}")
+
+print("\nAnalysis completed!")
+print("Files generated:")
+print("- perm_importance_allmodels.svg")
+print("- perm_importance_allmodels.csv")
+print("- shap_importance_allmodels.svg")
+print("- shap_importance_allmodels.csv")
 
 
-
-
+###### END OF THE SCRIPT ######
