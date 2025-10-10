@@ -327,7 +327,7 @@ for (gene in genes_present) {
   dev.off()
 }
 
-############ 5. WGCNA #############################
+###################### 5. WGCNA (with varying beta values, 4,5,6)#############################
 if (!("DESeq2" %in% installed.packages())) {
   # Install this package if it isn't installed yet
   BiocManager::install("DESeq2", update = FALSE)
@@ -363,11 +363,10 @@ library(WGCNA)
 library(flashClust)
 library(curl)
 library(ggplot2)
-library(readxl)
 library(data.table)
 
-enableWGCNAThreads()
-allowWGCNAThreads()
+enableWGCNAThreads(nThreads = 24)
+WGCNAnThreads()
 
 data <- data.frame(fread("complete_z_scores_Train.csv", header = TRUE, sep = ","), row.names = 1, check.names= FALSE)
 
@@ -412,10 +411,28 @@ data <- data[cut.sampleTree==1, ]
 
 #### Network Construction ---------
 
-# Note: We should be maximizing the R^2 value and minimizing mean connectivity.
+# Note: We should be maximizing the R^2 value (around 0.8) and select the ones with mean k highest (around >= 10).
 
 # select beta values
 spt <- pickSoftThreshold(data)
+##Power SFT.R.sq   slope truncated.R.sq  mean.k. median.k. max.k.
+##1      1  0.00287  0.0773          0.502 2250.000  2.31e+03 4200.0
+##2      2  0.44200 -0.9980          0.896  561.000  5.18e+02 1730.0
+##3      3  0.73600 -1.5800          0.980  194.000  1.48e+02  969.0
+##4      4  0.83300 -1.8100          0.965   81.700  4.92e+01  621.0
+##5      5  0.87600 -1.8400          0.956   39.700  1.83e+01  430.0
+##6      6  0.90900 -1.7600          0.958   21.400  7.44e+00  312.0
+##7      7  0.91300 -1.7100          0.953   12.600  3.22e+00  235.0
+##8      8  0.91400 -1.6500          0.953    7.870  1.48e+00  184.0
+##9      9  0.89400 -1.6100          0.945    5.190  7.10e-01  147.0
+##10    10  0.90000 -1.5500          0.952    3.570  3.57e-01  119.0
+##11    12  0.87100 -1.5000          0.950    1.860  9.80e-02   81.6
+##12    14  0.87400 -1.4400          0.960    1.070  2.98e-02   57.9
+##13    16  0.84100 -1.4400          0.951    0.657  9.77e-03   42.3
+##14    18  0.84600 -1.4200          0.956    0.425  3.43e-03   31.6
+##15    20  0.85500 -1.3900          0.963    0.286  1.25e-03   24.1
+
+
 
 # plot the R^2 vs soft thresholds
 tiff("WGCNA_results/r2_vs_soft_thres.tif", res=600, units="in", compression="lzw", height=5, width=5)
@@ -435,6 +452,8 @@ plot(spt$fitIndices[,1], spt$fitIndices[,5],
      main = paste("Mean connectivity"))
 text(spt$fitIndices[,1], spt$fitIndices[,5], labels= spt$fitIndices[,1],col="red")
 dev.off()
+
+########### softpower = 6 ###############
 
 # Calling the adjacency function
 
@@ -485,13 +504,13 @@ head(MEs)
 
 ME.dissimilarity = 1-cor(MElist$eigengenes, use="complete") #Calculate eigengene dissimilarity
 METree = hclust(as.dist(ME.dissimilarity), method = "average") #Clustering eigengenes 
-tiff("WGCNA_results/cluster_dendogram_before_merge.tif", res=600, compression="lzw", height=5, width=5, units="in")
+tiff("WGCNA_results/cluster_dendogram_before_merge_spt6.tif", res=600, compression="lzw", height=5, width=5, units="in")
 par(mar = c(0,4,2,0)) #seting margin sizes
 par(cex = 0.6);#scaling the graphic
 plot(METree)
 abline(h=.25, col = "red") #a height of .25 corresponds to correlation of .75
 dev.off()
-merge <- mergeCloseModules(data, ModuleColors, cutHeight = .25)
+merge <- mergeCloseModules(data, ModuleColors, cutHeight = .35)
 
 # The merged module colors, assigning one color to each module
 mergedColors = merge$colors
@@ -499,7 +518,7 @@ mergedColors = merge$colors
 mergedMEs = merge$newMEs
 
 
-## We take your 43 gene list and check where do they lie in modules
+## Take your 43 gene list and check where do they lie in modules
 geneList <- read.table("./43_gene_list.txt", header = F, sep = ",")
 geneList <- as.character(geneList$V1)
 gene_indices = match(geneList, colnames(data))
@@ -509,11 +528,11 @@ geneList_results = data.frame(
   Gene = geneList,
   MergedModule = module_assignments
 )
-write.table(geneList_results, "WGCNA_results/module_genes_43.csv", sep=',', row.names=T, col.names=T)
+write.table(geneList_results, "WGCNA_results/module_genes_43_spt6.csv", sep=',', row.names=T, col.names=T)
 table(module_assignments)
 
 ## Plotting both original and merged module dendograms
-tiff("WGCNA_results/cluster_dendogram_before_and after_merge.tif", res=600, compression="lzw", height=6, width=9, units="in")
+tiff("WGCNA_results/cluster_dendogram_before_and after_merge_spt6.tif", res=600, compression="lzw", height=6, width=9, units="in")
 plotDendroAndColors(geneTree, cbind(ModuleColors, mergedColors), 
                     c("Original Module", "Merged Module"),
                     dendroLabels = FALSE, hang = 0.03,
@@ -560,7 +579,7 @@ textMatrix = paste(signif(module.trait.correlation, 2), "\n(",
 dim(textMatrix) = dim(module.trait.correlation)
 par(mar = c(6, 8.5, 3, 1))
 # Display the correlation values within a heatmap plot
-tiff("WGCNA_results/heatmap_RCDI_correlation_new.tif", res=600, compression="lzw", height=7, width=5, units="in")
+tiff("WGCNA_results/heatmap_RCDI_correlation_new_spt6.tif", res=600, compression="lzw", height=7, width=5, units="in")
 
 labeledHeatmap(Matrix = module.trait.correlation,
                xLabels = names(df_clinical),
@@ -597,31 +616,31 @@ names(geneTraitSignificance) = paste("GS.", names(rcdi), sep="")
 names(GSPvalue) = paste("p.GS.", names(rcdi), sep="")
 head(GSPvalue)
 
-hubGenes = names(which((abs(GSPvalue) > 0.2) & (abs(MMPvalue) > 0.8)))
+#hubGenes = names(which((abs(GSPvalue) > 0.2) & (abs(MMPvalue) > 0.8)))
 
 
 ## Scatter plot of gene significance vs module membership
-par(mar=c(1,1,1,1))
-module = "purple" #choose a module
-column = match(module, modNames)
-moduleGenes = mergedColors==module
-verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
-                   abs(geneTraitSignificance[moduleGenes,1]),
-                   xlab = paste("Module Membership in", module, "module"),
-                   ylab = "Gene significance for body weight",
-                   main = paste("Module membership vs. gene significance\n"),
-                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+#par(mar=c(1,1,1,1))
+#module = "purple" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+ #                  xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
 
-par(mar=c(1,1,1,1))
-module = "brown" #choose a module
-column = match(module, modNames)
-moduleGenes = mergedColors==module
-verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
-                   abs(geneTraitSignificance[moduleGenes,1]),
-                   xlab = paste("Module Membership in", module, "module"),
-                   ylab = "Gene significance for body weight",
-                   main = paste("Module membership vs. gene significance\n"),
-                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+#par(mar=c(1,1,1,1))
+#module = "brown" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+#                   xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
 
 # Network Visualization of Eigengenes
 # Isolate rcdi from the clinical traits
@@ -632,22 +651,461 @@ mod_MEs <- MEs[row.names(MEs) %in% row.names(df_clinical),]
 mod_MEs <- mod_MEs[row.names(df_clinical),]
 MET = orderMEs(cbind(mod_MEs, rcdi))
 # Plot the relationships among the eigengenes and the trait
-tiff("WGCNA_results/corr_RCDI_modules.tif", res=600, compression="lzw", height=6, width=9, units="in")
+tiff("WGCNA_results/corr_RCDI_modules_spt6.tif", res=600, compression="lzw", height=6, width=9, units="in")
 par(cex = 0.9)
 plotEigengeneNetworks(MET, "", marDendro = c(0,4,1,2), marHeatmap = c(5,4,1,2), cex.lab = 0.8, xLabelsAngle
                       = 90)
 dev.off()
 # Plot the dendrogram
-tiff("WGCNA_results/dendogram.tif", res=600, compression="lzw", height=6, width=9, units="in")
+tiff("WGCNA_results/dendogram.tif_spt6", res=600, compression="lzw", height=6, width=9, units="in")
 par(cex = 1.0)
 plotEigengeneNetworks(MET, "Eigengene dendrogram", marDendro = c(0,4,2,0),
                       plotHeatmaps = FALSE)
 dev.off()
 
 # Plot the heatmap matrix (note: this plot will overwrite the dendrogram plot)
-tiff("WGCNA_results/corr_heatmap.tif", res=600, compression="lzw", height=6, width=9, units="in")
+tiff("WGCNA_results/corr_heatmap_spt6.tif", res=600, compression="lzw", height=6, width=9, units="in")
 par(cex = 1.0)
 par(cex = 1.0, mar = c(1,1,1,1))
 plotEigengeneNetworks(MET, "Eigengene adjacency heatmap", marHeatmap = c(5,5,2,2),
                       plotDendrograms = FALSE, xLabelsAngle = 90)
 dev.off()
+
+
+########### softpower = 4 ###############
+
+# Calling the adjacency function
+
+softPower <- 4 # from above plots
+adjacency <- adjacency(data, power = softPower)
+
+##### Module Construction ---------
+
+# Topological Overlap Matrix for dissimilarity determination
+gc()
+TOM <- TOMsimilarity(adjacency) # To convert the adjacency matrix into a TOM similarity matrix
+TOM.dissimilarity <- 1-TOM # To convert this matrix into a dissimilarity matrix you can subtract the TOM object from 1.
+
+# Hierarchical clustering
+geneTree <- hclust(as.dist(TOM.dissimilarity), method = "average")  # clustering on the basis of dissimilarity
+
+#plotting the dendrogram
+sizeGrWindow(12,9)
+plot(geneTree, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity", 
+     labels = FALSE, hang = 0.04)
+
+## NOTE: To identify modules from this gene dendrogram, you can use the cutreeDynamic() function. This will allow you to set a 
+## minimum cluster size. For genomic data like this it is more beneficial to set minimum module sizes relatively high as 
+## you are working with high loads of data. The authors of WGCNA recommend to start at a minClusterSize = 30.
+
+Modules <- cutreeDynamic(dendro = geneTree, distM = TOM.dissimilarity, deepSplit = 2, pamRespectsDendro = FALSE, minClusterSize = 30)
+
+table(Modules) #returns a table of the counts of factor levels in an object. In this case how many genes are assigned to each created module. 
+
+# Plot the module assignments under gene dendogram for visualization
+
+ModuleColors <- labels2colors(Modules) #assigns each module number a color
+table(ModuleColors) #returns the counts for each color (aka the number of genes within each module)
+
+#plots the gene dendrogram with the module colors
+plotDendroAndColors(geneTree, ModuleColors,"Module",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors")
+
+## Module Eigengene identification
+
+MElist <- moduleEigengenes(data, colors = ModuleColors) 
+MEs <- MElist$eigengenes 
+head(MEs)
+
+#### Module Merging --------
+
+ME.dissimilarity = 1-cor(MElist$eigengenes, use="complete") #Calculate eigengene dissimilarity
+METree = hclust(as.dist(ME.dissimilarity), method = "average") #Clustering eigengenes 
+tiff("WGCNA_results/cluster_dendogram_before_merge_spt4.tif", res=600, compression="lzw", height=5, width=5, units="in")
+par(mar = c(0,4,2,0)) #seting margin sizes
+par(cex = 0.6);#scaling the graphic
+plot(METree)
+abline(h=.25, col = "red") #a height of .25 corresponds to correlation of .75
+dev.off()
+merge <- mergeCloseModules(data, ModuleColors, cutHeight = .35)
+
+# The merged module colors, assigning one color to each module
+mergedColors = merge$colors
+# Eigengenes of the new merged modules
+mergedMEs = merge$newMEs
+
+
+## Take your 43 gene list and check where do they lie in modules
+geneList <- read.table("./43_gene_list.txt", header = F, sep = ",")
+geneList <- as.character(geneList$V1)
+gene_indices = match(geneList, colnames(data))
+module_assignments = mergedColors[gene_indices]
+# Create results table
+geneList_results = data.frame(
+  Gene = geneList,
+  MergedModule = module_assignments
+)
+write.table(geneList_results, "WGCNA_results/module_genes_43_spt4.csv", sep=',', row.names=T, col.names=T)
+table(module_assignments)
+
+## Plotting both original and merged module dendograms
+tiff("WGCNA_results/cluster_dendogram_before_and after_merge_spt4.tif", res=600, compression="lzw", height=6, width=9, units="in")
+plotDendroAndColors(geneTree, cbind(ModuleColors, mergedColors), 
+                    c("Original Module", "Merged Module"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors for original and merged modules")
+dev.off()
+
+###### External Trait Matching -------
+
+# read clinical_data
+
+df_clinical <- read.csv("Train_clinical_expr_combined_rcdi.csv", sep = ",", row.names = 1, check.names = FALSE)
+df_clinical <- df_clinical %>%
+  select(RCDI, RiskClass, Sex, Age_group, Tumor_stage) %>%
+  dplyr::mutate(RiskClass = recode(RiskClass,
+                            "low" = 1,
+                            "high" = 2),
+         Sex = recode(Sex,
+                 "Male" = 2,
+                 "Female" = 1),
+    Age_group = recode(Age_group,
+                       "<= 65" = 1,
+                       "66-79" = 2,
+                       ">= 80" = 3),
+    Tumor_stage = recode(Tumor_stage,
+                         "Stage I - II" = 1,
+                         "Stage III - IV" = 2))
+
+# MAtch the trait data to expression data by sample name
+expr_data <- data[row.names(data) %in% row.names(df_clinical),]
+expr_data <- expr_data[row.names(df_clinical),]
+
+# Define numbers of genes and samples
+nGenes = ncol(expr_data)
+nSamples = nrow(expr_data)
+mod_merged_MEs = mergedMEs[row.names(mergedMEs) %in% row.names(df_clinical),] # subset for the samples in the clinical data
+mod_merged_MEs <- mod_merged_MEs[row.names(df_clinical),] # same order of samples as df_clinical
+module.trait.correlation = cor(mod_merged_MEs, df_clinical, use = "p") #p for pearson correlation coefficient 
+module.trait.Pvalue = corPvalueStudent(module.trait.correlation, nSamples) #calculate the p-value associated with the correlation
+
+# Will display correlations and their p-values
+textMatrix = paste(signif(module.trait.correlation, 2), "\n(",
+                   signif(module.trait.Pvalue, 1), ")", sep = "");
+dim(textMatrix) = dim(module.trait.correlation)
+par(mar = c(6, 8.5, 3, 1))
+# Display the correlation values within a heatmap plot
+tiff("WGCNA_results/heatmap_RCDI_correlation_new_spt4.tif", res=600, compression="lzw", height=7, width=5, units="in")
+
+labeledHeatmap(Matrix = module.trait.correlation,
+               xLabels = names(df_clinical),
+               yLabels = names(mod_merged_MEs),
+               ySymbols = names(mod_merged_MEs),
+               colorLabels = FALSE,
+               colors = blueWhiteRed(50),
+               textMatrix = textMatrix,
+               setStdMargins = T,
+               cex.text = 0.4,
+               cex.lab.y = 0.6,
+               cex.lab.x = 0.6,
+               zlim = c(-1,1),
+               main = NULL)
+dev.off()
+
+####### Target Gene Identification -------
+# Define variable weight containing the RCDI column of df_clinical
+rcdi = as.data.frame(df_clinical$RCDI)
+names(rcdi) = "RCDI"
+
+modNames = substring(names(mod_merged_MEs), 3) #extract module names
+
+#Calculate the module membership and the associated p-values
+geneModuleMembership = as.data.frame(cor(expr_data, mod_merged_MEs, use = "p"))
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership), nSamples))
+names(geneModuleMembership) = paste("MM", modNames, sep="")
+names(MMPvalue) = paste("p.MM", modNames, sep="")
+
+#Calculate the gene significance and associated p-values
+geneTraitSignificance = as.data.frame(cor(expr_data, rcdi, use = "p"))
+GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples))
+names(geneTraitSignificance) = paste("GS.", names(rcdi), sep="")
+names(GSPvalue) = paste("p.GS.", names(rcdi), sep="")
+head(GSPvalue)
+
+#hubGenes = names(which((abs(GSPvalue) > 0.2) & (abs(MMPvalue) > 0.8)))
+
+
+## Scatter plot of gene significance vs module membership
+#par(mar=c(1,1,1,1))
+#module = "purple" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+#                   xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+
+#par(mar=c(1,1,1,1))
+#module = "brown" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+#                   xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+
+# Network Visualization of Eigengenes
+# Isolate rcdi from the clinical traits
+rcdi = as.data.frame(df_clinical$RCDI)
+names(rcdi) = "RCDI"
+# Add the weight to existing module eigengenes
+mod_MEs <- MEs[row.names(MEs) %in% row.names(df_clinical),]
+mod_MEs <- mod_MEs[row.names(df_clinical),]
+MET = orderMEs(cbind(mod_MEs, rcdi))
+# Plot the relationships among the eigengenes and the trait
+tiff("WGCNA_results/corr_RCDI_modules_spt4.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 0.9)
+plotEigengeneNetworks(MET, "", marDendro = c(0,4,1,2), marHeatmap = c(5,4,1,2), cex.lab = 0.8, xLabelsAngle
+                      = 90)
+dev.off()
+# Plot the dendrogram
+tiff("WGCNA_results/dendogram_spt4.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 1.0)
+plotEigengeneNetworks(MET, "Eigengene dendrogram", marDendro = c(0,4,2,0),
+                      plotHeatmaps = FALSE)
+dev.off()
+
+# Plot the heatmap matrix (note: this plot will overwrite the dendrogram plot)
+tiff("WGCNA_results/corr_heatmap_spt4.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 1.0)
+par(cex = 1.0, mar = c(1,1,1,1))
+plotEigengeneNetworks(MET, "Eigengene adjacency heatmap", marHeatmap = c(5,5,2,2),
+                      plotDendrograms = FALSE, xLabelsAngle = 90)
+dev.off()
+
+
+########### softpower = 5 ###############
+
+# Calling the adjacency function
+
+softPower <- 5 # from above plots
+adjacency <- adjacency(data, power = softPower)
+
+##### Module Construction ---------
+
+# Topological Overlap Matrix for dissimilarity determination
+gc()
+TOM <- TOMsimilarity(adjacency) # To convert the adjacency matrix into a TOM similarity matrix
+TOM.dissimilarity <- 1-TOM # To convert this matrix into a dissimilarity matrix you can subtract the TOM object from 1.
+
+# Hierarchical clustering
+geneTree <- hclust(as.dist(TOM.dissimilarity), method = "average")  # clustering on the basis of dissimilarity
+
+#plotting the dendrogram
+sizeGrWindow(12,9)
+plot(geneTree, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity", 
+     labels = FALSE, hang = 0.04)
+
+## NOTE: To identify modules from this gene dendrogram, you can use the cutreeDynamic() function. This will allow you to set a 
+## minimum cluster size. For genomic data like this it is more beneficial to set minimum module sizes relatively high as 
+## you are working with high loads of data. The authors of WGCNA recommend to start at a minClusterSize = 30.
+
+Modules <- cutreeDynamic(dendro = geneTree, distM = TOM.dissimilarity, deepSplit = 2, pamRespectsDendro = FALSE, minClusterSize = 30)
+
+table(Modules) #returns a table of the counts of factor levels in an object. In this case how many genes are assigned to each created module. 
+
+# Plot the module assignments under gene dendogram for visualization
+
+ModuleColors <- labels2colors(Modules) #assigns each module number a color
+table(ModuleColors) #returns the counts for each color (aka the number of genes within each module)
+
+#plots the gene dendrogram with the module colors
+plotDendroAndColors(geneTree, ModuleColors,"Module",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors")
+
+## Module Eigengene identification
+
+MElist <- moduleEigengenes(data, colors = ModuleColors) 
+MEs <- MElist$eigengenes 
+head(MEs)
+
+#### Module Merging --------
+
+ME.dissimilarity = 1-cor(MElist$eigengenes, use="complete") #Calculate eigengene dissimilarity
+METree = hclust(as.dist(ME.dissimilarity), method = "average") #Clustering eigengenes 
+tiff("WGCNA_results/cluster_dendogram_before_merge_spt5.tif", res=600, compression="lzw", height=5, width=5, units="in")
+par(mar = c(0,4,2,0)) #seting margin sizes
+par(cex = 0.6);#scaling the graphic
+plot(METree)
+abline(h=.25, col = "red") #a height of .25 corresponds to correlation of .75
+dev.off()
+merge <- mergeCloseModules(data, ModuleColors, cutHeight = .35)
+
+# The merged module colors, assigning one color to each module
+mergedColors = merge$colors
+# Eigengenes of the new merged modules
+mergedMEs = merge$newMEs
+
+
+## Take your 43 gene list and check where do they lie in modules
+geneList <- read.table("./43_gene_list.txt", header = F, sep = ",")
+geneList <- as.character(geneList$V1)
+gene_indices = match(geneList, colnames(data))
+module_assignments = mergedColors[gene_indices]
+# Create results table
+geneList_results = data.frame(
+  Gene = geneList,
+  MergedModule = module_assignments
+)
+write.table(geneList_results, "WGCNA_results/module_genes_43_spt5.csv", sep=',', row.names=T, col.names=T)
+table(module_assignments)
+
+## Plotting both original and merged module dendograms
+tiff("WGCNA_results/cluster_dendogram_before_and after_merge_spt5.tif", res=600, compression="lzw", height=6, width=9, units="in")
+plotDendroAndColors(geneTree, cbind(ModuleColors, mergedColors), 
+                    c("Original Module", "Merged Module"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors for original and merged modules")
+dev.off()
+
+###### External Trait Matching -------
+
+# read clinical_data
+
+df_clinical <- read.csv("Train_clinical_expr_combined_rcdi.csv", sep = ",", row.names = 1, check.names = FALSE)
+df_clinical <- df_clinical %>%
+  select(RCDI, RiskClass, Sex, Age_group, Tumor_stage) %>%
+  dplyr::mutate(RiskClass = recode(RiskClass,
+                            "low" = 1,
+                            "high" = 2),
+         Sex = recode(Sex,
+                 "Male" = 2,
+                 "Female" = 1),
+    Age_group = recode(Age_group,
+                       "<= 65" = 1,
+                       "66-79" = 2,
+                       ">= 80" = 3),
+    Tumor_stage = recode(Tumor_stage,
+                         "Stage I - II" = 1,
+                         "Stage III - IV" = 2))
+
+# MAtch the trait data to expression data by sample name
+expr_data <- data[row.names(data) %in% row.names(df_clinical),]
+expr_data <- expr_data[row.names(df_clinical),]
+
+# Define numbers of genes and samples
+nGenes = ncol(expr_data)
+nSamples = nrow(expr_data)
+mod_merged_MEs = mergedMEs[row.names(mergedMEs) %in% row.names(df_clinical),] # subset for the samples in the clinical data
+mod_merged_MEs <- mod_merged_MEs[row.names(df_clinical),] # same order of samples as df_clinical
+module.trait.correlation = cor(mod_merged_MEs, df_clinical, use = "p") #p for pearson correlation coefficient 
+module.trait.Pvalue = corPvalueStudent(module.trait.correlation, nSamples) #calculate the p-value associated with the correlation
+
+# Will display correlations and their p-values
+textMatrix = paste(signif(module.trait.correlation, 2), "\n(",
+                   signif(module.trait.Pvalue, 1), ")", sep = "");
+dim(textMatrix) = dim(module.trait.correlation)
+par(mar = c(6, 8.5, 3, 1))
+# Display the correlation values within a heatmap plot
+tiff("WGCNA_results/heatmap_RCDI_correlation_new_spt5.tif", res=600, compression="lzw", height=7, width=5, units="in")
+
+labeledHeatmap(Matrix = module.trait.correlation,
+               xLabels = names(df_clinical),
+               yLabels = names(mod_merged_MEs),
+               ySymbols = names(mod_merged_MEs),
+               colorLabels = FALSE,
+               colors = blueWhiteRed(50),
+               textMatrix = textMatrix,
+               setStdMargins = T,
+               cex.text = 0.4,
+               cex.lab.y = 0.6,
+               cex.lab.x = 0.6,
+               zlim = c(-1,1),
+               main = NULL)
+dev.off()
+
+####### Target Gene Identification -------
+# Define variable weight containing the RCDI column of df_clinical
+rcdi = as.data.frame(df_clinical$RCDI)
+names(rcdi) = "RCDI"
+
+modNames = substring(names(mod_merged_MEs), 3) #extract module names
+
+#Calculate the module membership and the associated p-values
+geneModuleMembership = as.data.frame(cor(expr_data, mod_merged_MEs, use = "p"))
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership), nSamples))
+names(geneModuleMembership) = paste("MM", modNames, sep="")
+names(MMPvalue) = paste("p.MM", modNames, sep="")
+
+#Calculate the gene significance and associated p-values
+geneTraitSignificance = as.data.frame(cor(expr_data, rcdi, use = "p"))
+GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples))
+names(geneTraitSignificance) = paste("GS.", names(rcdi), sep="")
+names(GSPvalue) = paste("p.GS.", names(rcdi), sep="")
+head(GSPvalue)
+
+#hubGenes = names(which((abs(GSPvalue) > 0.2) & (abs(MMPvalue) > 0.8)))
+
+
+## Scatter plot of gene significance vs module membership
+#par(mar=c(1,1,1,1))
+#module = "purple" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+#                   xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+
+#par(mar=c(1,1,1,1))
+#module = "brown" #choose a module
+#column = match(module, modNames)
+#moduleGenes = mergedColors==module
+#verboseScatterplot(abs(geneModuleMembership[moduleGenes,column]),
+#                   abs(geneTraitSignificance[moduleGenes,1]),
+#                   xlab = paste("Module Membership in", module, "module"),
+#                   ylab = "Gene significance for body weight",
+#                   main = paste("Module membership vs. gene significance\n"),
+#                   cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+
+# Network Visualization of Eigengenes
+# Isolate rcdi from the clinical traits
+rcdi = as.data.frame(df_clinical$RCDI)
+names(rcdi) = "RCDI"
+# Add the weight to existing module eigengenes
+mod_MEs <- MEs[row.names(MEs) %in% row.names(df_clinical),]
+mod_MEs <- mod_MEs[row.names(df_clinical),]
+MET = orderMEs(cbind(mod_MEs, rcdi))
+# Plot the relationships among the eigengenes and the trait
+tiff("WGCNA_results/corr_RCDI_modules_spt5.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 0.9)
+plotEigengeneNetworks(MET, "", marDendro = c(0,4,1,2), marHeatmap = c(5,4,1,2), cex.lab = 0.8, xLabelsAngle
+                      = 90)
+dev.off()
+# Plot the dendrogram
+tiff("WGCNA_results/dendogram_spt5.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 1.0)
+plotEigengeneNetworks(MET, "Eigengene dendrogram", marDendro = c(0,4,2,0),
+                      plotHeatmaps = FALSE)
+dev.off()
+
+# Plot the heatmap matrix (note: this plot will overwrite the dendrogram plot)
+tiff("WGCNA_results/corr_heatmap_spt5.tif", res=600, compression="lzw", height=6, width=9, units="in")
+par(cex = 1.0)
+par(cex = 1.0, mar = c(1,1,1,1))
+plotEigengeneNetworks(MET, "Eigengene adjacency heatmap", marHeatmap = c(5,5,2,2),
+                      plotDendrograms = FALSE, xLabelsAngle = 90)
+dev.off()
+
