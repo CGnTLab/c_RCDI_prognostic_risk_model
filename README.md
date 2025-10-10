@@ -6,7 +6,7 @@ Title: Non-apoptotic regulated cell death based prognostic risk model for colore
 
 Authors: Avik Sengupta, Sushree Sangita Kar, Rahul Kumar# [# corresponding author]
 
-Affiliation: Computational Genomics & Transcriptomics (CG&T) laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Near NH-65, Vill. Kandi, Sangareddy, Telangana-502285, India
+Affiliation: Computational Genomics & Transcriptomics (CG&T) laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Kandi, Sangareddy, Telangana-502285, India
 
 ## Overview
 
@@ -66,7 +66,7 @@ Using GDSC2 data and "oncoPredict()" tool in R, we calculated the drugs' IC50 va
 
 ## Machine learning analysis to evaluate the class distinction capability of the c-RCDI
 
-To evaluate our c-RCDI-based distinction of the patients, we further applied six classification machine learning models to the 43 genes' gene expression and c-RCDI to predict the classes.
+To evaluate our c-RCDI-based distinction of the patients, we further applied six classification machine learning models to the 43 genes' gene expression to predict the classes.
 
 
-Copyright | Computational Genomics & Transcriptomics (CG&T) Laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Telangana-502285, India
+Copyright | Computational Genomics & Transcriptomics (CG&T) Laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Kandi, Sangareddy, Telangana-502285, India
