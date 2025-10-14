@@ -189,6 +189,21 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -435,6 +450,21 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -671,6 +701,22 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -910,6 +956,22 @@ vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
+
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
@@ -1145,6 +1207,22 @@ vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
+
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
@@ -1349,6 +1427,22 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -1589,6 +1683,22 @@ vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
+
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
@@ -1794,6 +1904,21 @@ topvars <- vs.rf_model$topvars
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 # --- Evaluate Final Model on Test Datasets (test1, test2) ---
 RS_list_final <- lapply(df_list, function(x) { # Use df_list to evaluate on train, test1, test2
@@ -1999,6 +2124,22 @@ length(topvars)
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
+
 # --- Evaluate Final Model on Test Datasets (test1, test2) ---
 RS_list_final <- lapply(df_list, function(x) { # Use df_list to evaluate on train, test1, test2
   df_data <- x[, c(genes, "OS_MONTHS", "OS_STATUS")] # Use 'genes' or 'topvars' consistently
@@ -2200,6 +2341,22 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -2439,6 +2596,22 @@ vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
 
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
+
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
 
@@ -2644,6 +2817,22 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
@@ -2881,6 +3070,22 @@ rf_model_final <- rfsrc(Surv(OS_MONTHS, OS_STATUS) ~ ., data = train_data,
 vs.rf_model <- var.select(object = rf_model_final, conservative = "high")
 topvars <- vs.rf_model$topvars
 length(topvars)
+
+# train on the top selected genes through RSF
+train_top <- train_data[, c(topvars, "OS_MONTHS", "OS_STATUS")]
+rf_model_final <- rfsrc(
+  Surv(OS_MONTHS, OS_STATUS) ~ .,
+  data = train_top,
+  importance = TRUE,
+  ntree = ntree,
+  proximity = TRUE,
+  forest = TRUE,
+  seed = seed,
+  nodesize = nodesize,
+  bootstrap = "by.root",
+  ncores = num_detected_cores,
+  nodedepth = nodedepth
+)
 
 print(paste0("Length of selected genes: ",length(topvars)))
 print(paste0("Genes selected: ",paste(topvars, collapse = ",")))
