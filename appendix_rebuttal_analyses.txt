@@ -1,8 +1,10 @@
 
-#-----------------------(R environment)-------------------------------#
-######################## Rebuttal Analyses ############################
+#-----------------------(R environment)------------------------------------#
+######################## Rebuttal Analyses ################################
 
+###########################################################################
 ###### A. LASSO and VIF-based gene reduction strategy analysis ############
+###########################################################################
 
 ##### A1. LASSO based reduction #####
 
@@ -548,3 +550,265 @@ print(performance_df)
 
 message("All done. Files written:\n - VIF_retained_genes.csv\n - VIF_removed_genes.csv\n - *_with_VIF_Cox_RiskScore.csv (per dataset)\n - VIF_Cox_Performance_Summary.csv")
 
+########################################################################
+###### B. app.R (RShiny application for c-RCDI calculation) ############
+########################################################################
+
+library(shiny)
+library(shinydashboard)
+library(DT)
+library(plotly)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(randomForestSRC)
+
+gs_ferr <- c("CDKN2A","CHMP6","TXNIP","CXCL2","TP63","BID","CDO1","PLIN4","SLC2A3","EGFR",
+             "ALOXE3","AURKA","GDF15","GPX2","RGS4")
+gs_py <- c("CHMP6","TP63","GSDMC","IL18","GZMB")
+gs_aut <- c("MAP1B","CLN3","ATP2B4","SUN2")
+gs_net <- c("MYC","CDK4","LAMC2","ETS2","TCF7","NOX4","STAT1","YAP1","C1QC","C1QA","KNG1",
+            "SNAI1","IGHG1","CGAS","S100A11","CR1","ACTA2","LAMA2","CDK6","NFATC1","TRAF3IP2")
+gs_RCDI <- unique(c(gs_ferr, gs_py, gs_aut, gs_net))
+
+fix_input_for_model <- function(df, model) {
+  expected <- names(model$xvar)
+  df_fixed <- df[, intersect(names(df), expected), drop=FALSE]
+  missing <- setdiff(expected, names(df_fixed))
+  if (length(missing) > 0) df_fixed[, missing] <- 0
+  df_fixed <- df_fixed[, expected, drop=FALSE]
+  return(df_fixed)
+}
+
+ui <- dashboardPage(
+  dashboardHeader(title = "c-RCDI Calculator"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Calculator", tabName = "calculator", icon = icon("calculator")),
+      menuItem("Info", tabName = "info", icon = icon("info-circle")),
+      menuItem("Genes", tabName = "genes", icon = icon("list"))
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "calculator",
+              fluidRow(
+                box(title = "Inputs", status = "primary", solidHeader = TRUE, width = 12,
+                    fluidRow(
+                      column(4,
+                             radioButtons("data_type", "Expression Platform:",
+                                          choices = list("RNA-seq" = "RNAseq","Microarray" = "Microarray"),
+                                          selected = "RNAseq")
+                      ),
+                      column(5,
+                             fileInput("file", "Upload CSV file", accept = ".csv"),
+                             helpText("CSV must contain Patient_ID and expression data for all 43 genes."),
+                             verbatimTextOutput("error_message")
+                      ),
+                      column(3,
+                             br(),
+                             actionButton("calculate", "Calculate", class = "btn-primary btn-lg"),
+                             br(),
+                             downloadButton("download_example", "Download Example Input File"),
+                             br(), br(),
+                             actionButton("clear", "Clear Results", class = "btn-secondary btn-lg")
+                      )
+                    )
+                )
+              ),
+              fluidRow(
+                conditionalPanel(condition = "output.results_available",
+                                 box(title = "Risk Score Results", status = "success", solidHeader = TRUE, width = 6,
+                                     DT::dataTableOutput("results_table"),
+                                     downloadButton("download_table", "Download Table")
+                                 ),
+                                 box(title = "Risk Plot", status = "info", solidHeader = TRUE, width = 6,
+                                     plotlyOutput("risk_plot"),
+                                     downloadButton("download_plot", "Download Plot (PNG)")
+                                 )
+                )
+              ),
+              fluidRow(
+                conditionalPanel(condition = "output.results_available",
+                                 box(title = "c-RCDI Analysis Summary", status = "warning", solidHeader = TRUE, width = 12,
+                                     verbatimTextOutput("model_summary")
+                                 ))
+              )
+      ),
+      tabItem(tabName = "info",
+              fluidRow(
+                box(title = "General Information", status = "primary", solidHeader = TRUE, width = 12,
+                    h4("c-RCDI Calculator"),
+                    p("Note: For research use only."),
+                    p("Cutoffs: RNA-seq >= 0.29; Microarray >= 0.46 = High risk."),
+                    p("Input: non-log TPM for RNA-seq; RMA-normalized for Microarray."),
+                    p("Expression data for all 43 genes required."),
+                    p("CSV format only."),
+                    p("-----------------------------------------------------------------------------------------"),
+                    p("Title: Non-apoptotic regulated cell death based prognostic risk model for colorectal cancer"),
+                    p("Authors: Avik Sengupta, Sushree Sangita Kar, Dr. Rahul Kumar"),
+                    p("Copyright: CG&TLab, IIT Hyderabad")
+                )
+              )
+      ),
+      tabItem(tabName = "genes",
+              fluidRow(
+                box(title = "Gene Lists", status = "info", solidHeader = TRUE, width = 12,
+                    selectInput("gene_list_model", "Select Model:",
+                                choices = c("combined"="combined","autosis"="autosis",
+                                            "pyroptosis"="pyroptosis","netosis"="netosis",
+                                            "ferroptosis"="ferroptosis")),
+                    DT::dataTableOutput("gene_list_table")
+                )
+              )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  values <- reactiveValues(results = NULL, error = NULL, plot_obj = NULL)
+  
+  observeEvent(input$calculate, {
+    showModal(modalDialog("Calculation in progress. Please wait...", footer = NULL, easyClose = FALSE))
+    values$error <- NULL
+    values$results <- NULL
+    values$plot_obj <- NULL
+    
+    tryCatch({
+      # Validation
+      req(input$file)
+      df <- read_csv(input$file$datapath, show_col_types = FALSE)
+      if (!"Patient_ID" %in% colnames(df)) stop("'Patient_ID' column missing.")
+      missing_genes <- setdiff(gs_RCDI, colnames(df))
+      if (length(missing_genes) > 0) stop(paste("Missing gene(s):", paste(missing_genes, collapse = ", ")))
+      
+      # Data preparation
+      df_sel <- df[, c("Patient_ID", gs_RCDI), drop = FALSE]
+      rownames(df_sel) <- df_sel$Patient_ID
+      gene_exp <- df_sel[, gs_RCDI, drop = FALSE]
+      
+      gene_exp_norm <- if (input$data_type == "RNAseq") {
+        as.data.frame(t(scale(t(log2(gene_exp + 1)), center = TRUE, scale = TRUE)))
+      } else {
+        as.data.frame(t(scale(t(gene_exp), center = TRUE, scale = TRUE)))
+      }
+      
+      # Load models and predict
+      predict_model <- function(model_path, input_df) {
+        model <- readRDS(model_path)
+        fixed_input <- fix_input_for_model(input_df, model)
+        pred <- predict(model, newdata = fixed_input)$predicted
+        rm(model); gc()
+        return(pred)
+      }
+      
+      RS_ferroptosis <- predict_model("ferroptosis_prognostic_risk_model.rds", gene_exp_norm)
+      RS_NETosis    <- predict_model("netosis_prognostic_risk_model.rds", gene_exp_norm)
+      RS_pyroptosis <- predict_model("pyr_prognostic_risk_model.rds", gene_exp_norm)
+      RS_autosis    <- predict_model("autosis_prognostic_risk_model.rds", gene_exp_norm)
+      
+      combined_pred_df <- data.frame(
+        RS_ferroptosis = RS_ferroptosis,
+        RS_NETosis = RS_NETosis,
+        RS_pyroptosis = RS_pyroptosis,
+        RS_autosis = RS_autosis
+      )
+      
+      cRCDI_model <- readRDS("cRCDI_model.rds")
+      combined_risk_scores <- predict(cRCDI_model, newdata = combined_pred_df, type = "response")
+      rm(cRCDI_model); gc()
+      
+      cutoff <- if (input$data_type == "RNAseq") 0.29 else 0.46
+      risk_class <- ifelse(combined_risk_scores >= cutoff, "High Risk", "Low Risk")
+      
+      results <- data.frame(
+        Patient_ID = rownames(gene_exp),
+        c_RCDI = round(combined_risk_scores, 4),
+        Risk_Class = risk_class
+      )
+      values$results <- results
+      
+      p <- ggplot(results, aes(x = factor(Patient_ID, levels = sort(unique(Patient_ID))),
+                               y = c_RCDI, fill = Risk_Class)) +
+        geom_col() +
+        scale_fill_manual(values = c("Low Risk" = "#2ecc71", "High Risk" = "#e74c3c")) +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      values$plot_obj <- p
+    }, error = function(e) {
+      values$error <- e$message
+    })
+    
+    removeModal()
+  })
+  
+  observeEvent(input$clear, {
+    values$results <- NULL
+    values$error <- NULL
+    values$plot_obj <- NULL
+    session$sendInputMessage("file", list(value = NULL))
+    updateRadioButtons(session, "data_type", selected = "RNAseq")
+  })
+  
+  output$error_message <- renderText(values$error)
+  
+  output$results_table <- DT::renderDataTable({
+    req(values$results)
+    datatable(values$results, options = list(pageLength = 10))
+  })
+  
+  output$risk_plot <- renderPlotly({
+    req(values$plot_obj)
+    ggplotly(values$plot_obj)
+  })
+  
+  output$model_summary <- renderText({
+    req(values$results)
+    paste("Platform:", input$data_type,
+          "\nPatients:", nrow(values$results),
+          "\nHigh Risk:", sum(values$results$Risk_Class == "High Risk"),
+          "\nLow Risk:", sum(values$results$Risk_Class == "Low Risk"))
+  })
+  
+  output$results_available <- reactive(!is.null(values$results))
+  outputOptions(output, "results_available", suspendWhenHidden = FALSE)
+  
+  output$gene_list_table <- DT::renderDataTable({
+    req(input$gene_list_model)
+    df_genes <- switch(input$gene_list_model,
+                       "combined" = data.frame(Gene = gs_RCDI),
+                       "autosis" = data.frame(Gene = gs_aut),
+                       "pyroptosis" = data.frame(Gene = gs_py),
+                       "netosis" = data.frame(Gene = gs_net),
+                       "ferroptosis" = data.frame(Gene = gs_ferr))
+    datatable(df_genes, options = list(pageLength = 10))
+  })
+  
+  output$download_table <- downloadHandler(
+    filename = function() paste("risk_scores_", Sys.Date(), ".csv", sep = ""),
+    content = function(file) {
+      req(values$results)
+      write.csv(values$results, file, row.names = FALSE)
+    }
+  )
+  
+  output$download_plot <- downloadHandler(
+    filename = function() paste("risk_plot_", Sys.Date(), ".png", sep = ""),
+    content = function(file) {
+      req(values$plot_obj)
+      ggsave(file, plot = values$plot_obj, device = "png",
+             width = 10, height = 6, dpi = 300, bg = "white")
+    }
+  )
+  
+  output$download_example <- downloadHandler(
+    filename = function() "example_file.csv",
+    content = function(file) {
+      # Path relative to app.R
+      file.copy("example_file.csv", file)
+    }
+  )
+}
+
+shinyApp(ui, server)
