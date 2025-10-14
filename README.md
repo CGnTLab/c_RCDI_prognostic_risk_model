@@ -68,5 +68,9 @@ Using GDSC2 data and "oncoPredict()" tool in R, we calculated the drugs' IC50 va
 
 To evaluate our c-RCDI-based distinction of the patients, we further applied six classification machine learning models to the 43 genes' gene expression to predict the classes.
 
+## Web Application for c-RCDI Calculation
+
+We also developed a free and interactive R Shiny web application that automatically calculates a patient's c-RCDI risk score from gene expression data, to complement its clinical applicability, publicly available at: https://asgda.shinyapps.io/r_shiny/
+
 
 Copyright | Computational Genomics & Transcriptomics (CG&T) Laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Kandi, Sangareddy, Telangana-502285, India
