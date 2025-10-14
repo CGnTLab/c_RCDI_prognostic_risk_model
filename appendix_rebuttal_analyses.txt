@@ -1,0 +1,550 @@
+
+#-----------------------(R environment)-------------------------------#
+######################## Rebuttal Analyses ############################
+
+###### A. LASSO and VIF-based gene reduction strategy analysis ############
+
+##### A1. LASSO based reduction #####
+
+rm(list=ls())
+library(dplyr)
+library(data.table)
+library(BiocParallel)
+library(parallel)
+library(survival)
+library(glmnet)
+
+# Setup parallel backend
+num_detected_cores <- detectCores(logical = FALSE) - 2
+register(MulticoreParam(workers = num_detected_cores))
+
+set.seed(42)
+seed=42
+merged <- data.frame(fread("combined_z_score_clinical_batch.csv", sep=','), row.names=1, check.names=F)
+
+train  <- merged %>% dplyr::sample_frac(0.8) ##dim(train) #743 14558
+test1   <- merged[!(rownames(merged) %in% rownames(train)), ]
+
+degs_emtab <- data.frame(fread("DEGs_emtab_0.5.txt", sep = "\t", header = T), row.names=1, check.names = F)
+degs_emtab <- row.names(degs_emtab)
+degs_tcga <- data.frame(fread("DEGs_TCGA_0.5.txt", sep = "\t", header = T), row.names=1, check.names = F)
+degs_tcga <- row.names(degs_tcga)
+common_degs <- intersect(degs_emtab, degs_tcga)
+genes_to_select <- common_degs
+
+# train <- data.frame(fread("emtab_z_score_clinical.csv", sep=',', header=T), row.names=1, check.names=F)
+# # # # train <- train[ (train$OS_MONTHS <= 140.38356164) ,]
+# test1 <- data.frame(fread("tcga_z_score_clinical.csv", sep = ",", header = T), row.names=1, check.names=F)
+test2 <- data.frame(fread("independent_ds_gse39582.csv", sep = ",", header = T), row.names=1, check.names=F)
+test2 <- test2 %>%
+  dplyr::rename(
+    OS_MONTHS = os.months,
+    OS_STATUS = os.event
+  )
+test3 <- data.frame(fread("independent_ds_gse161158.csv", sep=",", header=T), row.names = 1, check.names = F)
+test3 <- test3 %>%
+  dplyr::rename(
+    OS_MONTHS = dfs_time,
+    OS_STATUS = dfs_event
+  )
+
+data_list <- list(train, test1, test2, test3)
+
+# Find common column names across all data frames
+common_cols <- Reduce(intersect, lapply(data_list, colnames))
+
+train <- train[, common_cols, drop = FALSE]
+test1 <- test1[, common_cols, drop = FALSE]
+test2 <- test2[, common_cols, drop = FALSE]
+test3 <- test3[, common_cols, drop = FALSE]
+
+# subset for only DEGs for all datasets
+train <- train[, names(train) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test1 <- test1[, names(test1) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test2 <- test2[, names(test2) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test3 <- test3[, names(test3) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+
+## gene sets of signature genes ##
+
+gs_ferr <- c("CDKN2A","CHMP6","TXNIP","CXCL2","TP63","BID","CDO1","PLIN4","SLC2A3","EGFR","ALOXE3","AURKA","GDF15","GPX2","RGS4")
+gs_py <- c("CHMP6","TP63","GSDMC","IL18","GZMB")
+gs_aut <- c("MAP1B","CLN3","ATP2B4","SUN2")
+gs_net <- c("MYC","CDK4","LAMC2","ETS2","TCF7","NOX4","STAT1","YAP1","C1QC","C1QA","KNG1","SNAI1","IGHG1","CGAS","S100A11","CR1","ACTA2","LAMA2","CDK6","NFATC1","TRAF3IP2")
+gene_set <- unique(c(gs_ferr, gs_py, gs_aut, gs_net))
+
+train <- train[, names(train) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test1 <- test1[, names(test1) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test2 <- test2[, names(test2) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test3 <- test3[, names(test3) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+
+library("survival")
+library("survminer")
+
+if (!requireNamespace("survivalROC", quietly = TRUE)) install.packages("survivalROC")
+if (!requireNamespace("PRROC", quietly = TRUE)) install.packages("PRROC")
+
+# Load required packages
+library(survivalROC)   # For time-dependent ROC analysis
+library(PRROC)   # For Precision-Recall (PR) AUC
+
+covariates<- colnames(train)
+covariates <- head(covariates, -2)
+length(covariates)
+
+## Make dataframe list--
+df_list <- list(
+  Train= train,
+  Test= test1,
+  GSE39582 = test2,
+  GSE161158 = test3
+)
+
+df_list <- bplapply(df_list, function(x) {
+  class(x$OS_STATUS) <- "numeric"
+  class(x$OS_MONTHS) <- "numeric"
+  x <- na.omit(x)
+  x <- x[!(x$OS_MONTHS < 1),]
+  # x <- x[ (x$OS_MONTHS <= 140.38356164) ,]
+}, BPPARAM = MulticoreParam(num_detected_cores))
+
+
+# select the train dataset
+train <- df_list$Train ## explicitly select the train dataset
+
+# mention time points for survivalROC and PRROC
+time_points <- c(12, 36, 60)
+
+
+## Gene Selection ##
+library(lubridate)
+library(ggsurvfit)
+library(gtsummary)
+library(tidycmprsk)
+# install.packages("devtools")
+# devtools::install_github("zabore/condsurv")
+library(condsurv)
+library("glmnet")
+genes <- covariates
+data <-train[, colnames(train) %in% c(genes, "OS_STATUS", "OS_MONTHS")]
+set.seed(seed)
+
+cv.lasso <- cv.glmnet(x = as.matrix(data[, -c((ncol(data) - 1):ncol(data))]),  # Exclude OS_Months and OS_Status
+                      y = Surv(data$OS_MONTHS, data$OS_STATUS),
+                      family = "cox",
+                      nfolds = 10,
+                      alpha=1)
+
+# Extract optimal lambda
+best_lambda_lasso <- cv.lasso$lambda.min  # Or lambda.1se for more conservative model
+# best_lambda_lasso <- cv.lasso$lambda.1se
+
+# Fit the Lasso model with the optimal lambda
+lasso_fit <- glmnet(x = as.matrix(data[, -c((ncol(data) - 1):ncol(data))]),  # Exclude OS_Months and OS_Status
+                    y = Surv(data$OS_MONTHS, data$OS_STATUS),
+                    family = "cox",
+                    lambda = best_lambda_lasso,
+                    alpha=1)
+
+cf_lasso<- coef(lasso_fit)
+cf_lasso_df<- as.data.frame(as.matrix(cf_lasso))
+cf_lasso_df_non_zero<- cf_lasso_df[!(cf_lasso_df$s0==0), , drop=F]
+dim(cf_lasso_df_non_zero) #10 1
+
+# Predict and save risk scores for each dataset
+results_list <- lapply(names(df_list), function(ds_name) {
+  data <- df_list[[ds_name]]
+  
+  # Ensure survival columns exist and are numeric
+  data$OS_STATUS <- as.numeric(data$OS_STATUS)
+  data$OS_MONTHS <- as.numeric(data$OS_MONTHS)
+  
+  # Subset to the selected LASSO genes
+  available_genes <- intersect(genes, colnames(data))
+  if (length(available_genes) == 0) {
+    stop(paste0("No LASSO-selected genes found in dataset: ", ds_name))
+  }
+  
+  # Build design matrix aligned exactly with training genes
+  x_data <- data[, genes, drop = FALSE]
+  
+  # Add missing genes (if any) as 0 columns
+  for (g in setdiff(genes, colnames(data))) {
+    x_data[[g]] <- 0
+  }
+  
+  # Reorder columns to match training model exactly
+  x_data <- x_data[, genes, drop = FALSE]
+  
+  # Convert to numeric matrix
+  x_data <- as.matrix(sapply(x_data, as.numeric))
+  
+  # Predict LASSO risk scores safely
+  risk_scores <- predict(lasso_fit, newx = x_data, type = "response")
+  data$Risk_Score_LASSO <- as.numeric(risk_scores)
+  
+  # Save dataset with risk scores
+  fwrite(data, file = paste0(ds_name, "_with_LASSO_RiskScore.csv"), sep = ",", row.names = TRUE)
+  
+  message(paste0("✅ Completed LASSO risk score prediction for: ", ds_name,
+                 " | n = ", nrow(data), " samples | ", length(genes), " genes"))
+  return(data)
+})
+names(results_list) <- names(df_list)
+
+# Print completion message
+cat("Risk scores calculated and saved for all datasets.\n")
+
+
+# --- Evaluate model performance across datasets ---
+library(survival)
+library(survivalROC)
+
+# Define evaluation time points
+time_points <- c(12, 36, 60)
+
+# Initialize a list to store metrics
+performance_list <- list()
+
+for (ds_name in names(results_list)) {
+  cat("\n📊 Evaluating:", ds_name, "...\n")
+  data <- results_list[[ds_name]]
+  
+  # Ensure numeric and clean survival data
+  data <- data[complete.cases(data[, c("OS_MONTHS", "OS_STATUS", "Risk_Score_LASSO")]), ]
+  data$OS_MONTHS <- as.numeric(data$OS_MONTHS)
+  data$OS_STATUS <- as.numeric(data$OS_STATUS)
+  
+  # ---- C-index ----
+  surv_obj <- Surv(data$OS_MONTHS, data$OS_STATUS)
+  c_index <- tryCatch({
+    concordance <- survConcordance(surv_obj ~ data$Risk_Score_LASSO)
+    concordance$concordance
+  }, error = function(e) NA)
+  
+  # ---- Time-dependent ROC AUC ----
+  auc_values <- sapply(time_points, function(tp) {
+    tryCatch({
+      roc_obj <- survivalROC(
+        Stime = data$OS_MONTHS,
+        status = data$OS_STATUS,
+        marker = data$Risk_Score_LASSO,
+        predict.time = tp,
+        method = "KM"
+      )
+      roc_obj$AUC
+    }, error = function(e) NA)
+  })
+  
+  # Store results
+  performance_list[[ds_name]] <- data.frame(
+    Dataset = ds_name,
+    C_index = round(c_index, 3),
+    AUC_12m = round(auc_values[1], 3),
+    AUC_36m = round(auc_values[2], 3),
+    AUC_60m = round(auc_values[3], 3)
+  )
+}
+
+# Combine into a single summary dataframe
+performance_df <- do.call(rbind, performance_list)
+
+# Print and save
+print(performance_df)
+fwrite(performance_df, "LASSO_Model_Performance_Summary.csv", sep = ",", row.names = FALSE)
+
+cat("\n Model evaluation completed for all datasets. Results saved in 'LASSO_Model_Performance_Summary.csv'\n")
+
+
+##### A2. VIF based reduction #####
+
+rm(list=ls())
+library(dplyr)
+library(data.table)
+library(BiocParallel)
+library(parallel)
+library(survival)
+library(glmnet)
+
+# Setup parallel backend
+num_detected_cores <- detectCores(logical = FALSE) - 2
+register(MulticoreParam(workers = num_detected_cores))
+seed=42
+set.seed(seed)
+
+merged <- data.frame(fread("combined_z_score_clinical_batch.csv", sep=','), row.names=1, check.names=F)
+
+train  <- merged %>% dplyr::sample_frac(0.8) ##dim(train) #743 14558
+test1   <- merged[!(rownames(merged) %in% rownames(train)), ]
+
+degs_emtab <- data.frame(fread("DEGs_emtab_0.5.txt", sep = "\t", header = T), row.names=1, check.names = F)
+degs_emtab <- row.names(degs_emtab)
+degs_tcga <- data.frame(fread("DEGs_TCGA_0.5.txt", sep = "\t", header = T), row.names=1, check.names = F)
+degs_tcga <- row.names(degs_tcga)
+common_degs <- intersect(degs_emtab, degs_tcga)
+genes_to_select <- common_degs
+
+# train <- data.frame(fread("emtab_z_score_clinical.csv", sep=',', header=T), row.names=1, check.names=F)
+# # # # train <- train[ (train$OS_MONTHS <= 140.38356164) ,]
+# test1 <- data.frame(fread("tcga_z_score_clinical.csv", sep = ",", header = T), row.names=1, check.names=F)
+test2 <- data.frame(fread("independent_ds_gse39582.csv", sep = ",", header = T), row.names=1, check.names=F)
+test2 <- test2 %>%
+  dplyr::rename(
+    OS_MONTHS = os.months,
+    OS_STATUS = os.event
+  )
+test3 <- data.frame(fread("independent_ds_gse161158.csv", sep=",", header=T), row.names = 1, check.names = F)
+test3 <- test3 %>%
+  dplyr::rename(
+    OS_MONTHS = dfs_time,
+    OS_STATUS = dfs_event
+  )
+
+data_list <- list(train, test1, test2, test3)
+
+# Find common column names across all data frames
+common_cols <- Reduce(intersect, lapply(data_list, colnames))
+
+train <- train[, common_cols, drop = FALSE]
+test1 <- test1[, common_cols, drop = FALSE]
+test2 <- test2[, common_cols, drop = FALSE]
+test3 <- test3[, common_cols, drop = FALSE]
+
+# subset for only DEGs for all datasets
+train <- train[, names(train) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test1 <- test1[, names(test1) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test2 <- test2[, names(test2) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+test3 <- test3[, names(test3) %in% c(genes_to_select, "OS_MONTHS", "OS_STATUS")]
+
+## gene sets of signature genes ##
+
+gs_ferr <- c("CDKN2A","CHMP6","TXNIP","CXCL2","TP63","BID","CDO1","PLIN4","SLC2A3","EGFR","ALOXE3","AURKA","GDF15","GPX2","RGS4")
+gs_py <- c("CHMP6","TP63","GSDMC","IL18","GZMB")
+gs_aut <- c("MAP1B","CLN3","ATP2B4","SUN2")
+gs_net <- c("MYC","CDK4","LAMC2","ETS2","TCF7","NOX4","STAT1","YAP1","C1QC","C1QA","KNG1","SNAI1","IGHG1","CGAS","S100A11","CR1","ACTA2","LAMA2","CDK6","NFATC1","TRAF3IP2")
+gene_set <- unique(c(gs_ferr, gs_py, gs_aut, gs_net))
+
+train <- train[, names(train) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test1 <- test1[, names(test1) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test2 <- test2[, names(test2) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+test3 <- test3[, names(test3) %in% c(gene_set, "OS_MONTHS", "OS_STATUS")]
+
+library("survival")
+library("survminer")
+
+if (!requireNamespace("survivalROC", quietly = TRUE)) install.packages("survivalROC")
+if (!requireNamespace("PRROC", quietly = TRUE)) install.packages("PRROC")
+
+# Load required packages
+library(survivalROC)   # For time-dependent ROC analysis
+library(PRROC)   # For Precision-Recall (PR) AUC
+
+covariates<- colnames(train)
+covariates <- head(covariates, -2)
+length(covariates)
+
+## Make dataframe list--
+df_list <- list(
+  Train= train,
+  Test= test1,
+  GSE39582 = test2,
+  GSE161158 = test3
+)
+
+df_list <- bplapply(df_list, function(x) {
+  class(x$OS_STATUS) <- "numeric"
+  class(x$OS_MONTHS) <- "numeric"
+  x <- na.omit(x)
+  x <- x[!(x$OS_MONTHS < 1),]
+  # x <- x[ (x$OS_MONTHS <= 140.38356164) ,]
+}, BPPARAM = MulticoreParam(num_detected_cores))
+
+
+# select the train dataset
+train <- df_list$Train ## explicitly select the train dataset
+
+# mention time points for survivalROC and PRROC
+time_points <- c(12, 36, 60)
+
+# --------------------------- #
+# VIF-based feature reduction + risk score + C-index + time-dependent AUC
+# --------------------------- #
+
+library(survival)
+library(survivalROC)
+library(survcomp)   # concordance.index (optional, fallback below)
+library(data.table)
+
+# ----- Reconstruct/clean datasets (safe) -----
+datasets_raw <- list(
+  Train  = train,
+  Test   = test1,
+  GSE39582 = test2,
+  GSE161158 = test3
+)
+
+# Clean and ensure survival cols numeric and remove NAs / short follow-up
+datasets <- lapply(datasets_raw, function(df) {
+  df <- as.data.frame(df)
+  if(!("OS_MONTHS" %in% colnames(df)) | !("OS_STATUS" %in% colnames(df))) {
+    stop("OS_MONTHS or OS_STATUS missing in a dataset.")
+  }
+  df$OS_MONTHS <- as.numeric(df$OS_MONTHS)
+  df$OS_STATUS <- as.numeric(df$OS_STATUS)
+  df <- na.omit(df)
+  df <- df[df$OS_MONTHS >= 1, , drop = FALSE]
+  return(df)
+})
+
+# ----- Genes to use (from your earlier 'covariates' list) -----
+# covariates was created earlier as colnames(train) excluding OS_*
+genes_all <- covariates
+genes_all <- genes_all[genes_all %in% colnames(datasets$Train)]  # ensure present in train
+if(length(genes_all) == 0) stop("No gene columns found in training data to run VIF.")
+
+# ----- VIF calculation helper -----
+vif_calc <- function(mat) {
+  # mat: data.frame or matrix of predictors (numeric). returns named vector of VIFs.
+  mat <- as.data.frame(mat)
+  stopifnot(ncol(mat) >= 2)
+  vifs <- sapply(seq_len(ncol(mat)), function(j) {
+    y <- mat[[j]]
+    X <- mat[, -j, drop = FALSE]
+    # if any constant column, return Inf
+    if(var(y, na.rm=TRUE) == 0) return(Inf)
+    fit <- try(lm(y ~ ., data = X), silent = TRUE)
+    if(inherits(fit, "try-error")) return(Inf)
+    r2 <- summary(fit)$r.squared
+    if(is.na(r2)) return(Inf)
+    1/(1 - r2)
+  })
+  names(vifs) <- colnames(mat)
+  return(vifs)
+}
+
+# ----- Iterative VIF-based reduction -----
+vif_threshold <- 2.5   # change if you want stricter/looser filtering
+max_iter <- 100
+train_mat <- as.data.frame(datasets$Train[, genes_all, drop = FALSE])
+# ensure numeric
+train_mat[] <- lapply(train_mat, function(x) as.numeric(as.vector(x)))
+
+retained_genes <- colnames(train_mat)
+removed_genes <- character(0)
+
+iter <- 1
+repeat {
+  if(length(retained_genes) < 2) break
+  mat <- train_mat[, retained_genes, drop = FALSE]
+  vifs <- vif_calc(mat)
+  max_v <- max(vifs, na.rm = TRUE)
+  worst <- names(which.max(vifs))
+  message("Iter ", iter, ": max VIF = ", round(max_v,3), " (", worst, ")")
+  if(is.na(max_v) || max_v <= vif_threshold) break
+  # remove worst variable
+  retained_genes <- setdiff(retained_genes, worst)
+  removed_genes <- c(removed_genes, worst)
+  iter <- iter + 1
+  if(iter > max_iter) break
+}
+message("VIF reduction done. Retained ", length(retained_genes), " genes; removed ", length(removed_genes), " genes.")
+
+# Save lists
+fwrite(data.frame(Retained = retained_genes), "VIF_retained_genes.csv")
+fwrite(data.frame(Removed = removed_genes), "VIF_removed_genes.csv")
+
+# ----- Fit Cox model on training set using retained_genes -----
+train_df <- datasets$Train
+# ensure columns present; if some retained_genes missing in train (unlikely) drop them
+retained_genes <- intersect(retained_genes, colnames(train_df))
+if(length(retained_genes) < 1) stop("No retained genes present in training data after intersection.")
+
+cox_train_df <- data.frame(OS_MONTHS = train_df$OS_MONTHS, OS_STATUS = train_df$OS_STATUS,
+                           train_df[, retained_genes, drop = FALSE])
+
+# build formula
+cox_form <- as.formula(paste("Surv(OS_MONTHS, OS_STATUS) ~", paste(retained_genes, collapse = " + ")))
+cox_model <- coxph(cox_form, data = cox_train_df)
+summary(cox_model)
+
+# ----- Predict risk scores for each dataset -----
+results_list <- list()
+for(ds_name in names(datasets)) {
+  df <- datasets[[ds_name]]
+  # build newdata with retained genes; if gene missing, add column of 0s
+  new_expr <- sapply(retained_genes, function(g) {
+    if(g %in% colnames(df)) {
+      as.numeric(df[[g]])
+    } else {
+      rep(0, nrow(df))
+    }
+  }, simplify = FALSE)
+  new_expr_df <- as.data.frame(new_expr, stringsAsFactors = FALSE)
+  colnames(new_expr_df) <- retained_genes
+  # combine survival cols if needed for predict
+  newdata <- cbind(new_expr_df)
+  # ensure numeric matrix
+  newdata[] <- lapply(newdata, function(x) as.numeric(as.vector(x)))
+  # linear predictor (lp) from cox model
+  lp <- predict(cox_model, newdata = newdata, type = "lp")
+  risk_score <- as.numeric(lp)  # use lp as risk score; you can use exp(lp) if desired
+  df$RiskScore_VIF_Cox <- risk_score
+  # save file with risk score
+  fwrite(df, file = paste0(ds_name, "_with_VIF_Cox_RiskScore.csv"), sep = ",", row.names = TRUE)
+  results_list[[ds_name]] <- df
+  message("Saved risk scores for ", ds_name, " (n=", nrow(df), ")")
+}
+
+# ----- Performance metrics: C-index and time-dependent AUCs -----
+time_points <- c(12, 36, 60)
+perf_list <- list()
+
+for(ds_name in names(results_list)) {
+  df <- results_list[[ds_name]]
+  # drop NA rows for required columns
+  df_eval <- df[complete.cases(df[, c("OS_MONTHS", "OS_STATUS", "RiskScore_VIF_Cox")]), ]
+  if(nrow(df_eval) < 10) {
+    warning("Small sample size for ", ds_name, " after filtering. Skipping.")
+    next
+  }
+  Tvec <- as.numeric(df_eval$OS_MONTHS)
+  Evec <- as.numeric(df_eval$OS_STATUS)
+  score <- as.numeric(df_eval$RiskScore_VIF_Cox)
+  
+  # C-index using survConcordance
+  cidx <- tryCatch({
+    sc <- survConcordance(Surv(Tvec, Evec) ~ score)
+    # survConcordance returns object with $concordance
+    if(!is.null(sc$concordance)) sc$concordance else NA
+  }, error = function(e) NA)
+  
+  # time-dependent AUCs
+  aucs <- sapply(time_points, function(tp) {
+    tp <- as.numeric(tp)
+    # survivalROC requires times > 0
+    out <- tryCatch({
+      rocobj <- survivalROC(Stime = Tvec, status = Evec, marker = score, predict.time = tp, method = "KM")
+      round(rocobj$AUC, 4)
+    }, error = function(e) NA)
+    out
+  })
+  
+  perf <- data.frame(
+    Dataset = ds_name,
+    N = nrow(df_eval),
+    C_index = round(as.numeric(cidx), 4),
+    AUC_12m = aucs[1],
+    AUC_36m = aucs[2],
+    AUC_60m = aucs[3],
+    Retained_genes = paste(retained_genes, collapse = ";"),
+    Removed_genes = paste(removed_genes, collapse = ";"),
+    stringsAsFactors = FALSE
+  )
+  perf_list[[ds_name]] <- perf
+}
+
+performance_df <- do.call(rbind, perf_list)
+fwrite(performance_df, file = "VIF_Cox_Performance_Summary.csv", sep = ",", row.names = FALSE)
+print(performance_df)
+
+message("All done. Files written:\n - VIF_retained_genes.csv\n - VIF_removed_genes.csv\n - *_with_VIF_Cox_RiskScore.csv (per dataset)\n - VIF_Cox_Performance_Summary.csv")
+
