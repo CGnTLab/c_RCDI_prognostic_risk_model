@@ -23,7 +23,7 @@ These model combinations were applied to each of the 13 DE-NARCD pathway genes t
 
 Logistic regression was applied to find the best 2-4 pathway combination by calculating the C-indices for each pathway(s) combination. The combined risk score was calculated further to get the combined risk score, which we named as the combined regulated cell death index (c-RCDI), formed from a prognostic risk model of 43 genes.
 
-#### c-RCDI Constitutive Pathways: Ferroptosis, NETosis, Pyroptosis, and Autosis
+### c-RCDI Constitutive Pathways: Ferroptosis, NETosis, Pyroptosis, and Autosis
 
 ## Predictive capability of the c-RCDI
 
