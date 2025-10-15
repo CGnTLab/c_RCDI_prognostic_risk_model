@@ -8,22 +8,22 @@ Authors: Avik Sengupta, Sushree Sangita Kar, Rahul Kumar# [# corresponding autho
 
 Affiliation: Computational Genomics & Transcriptomics (CG&T) laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Kandi, Sangareddy, Telangana-502285, India
 
-## Overview
+## Study Overview
 
 We identified and developed an integrative machine learning based prognostic risk model, derived from 13 combined non-apoptotic regulated cell death pathway genes, in colorectal cancer (CRC).
 
-#### Novel 2-step Machine Learning Framework --------------------------
-## Step 1: Machine learning based gene selection of each of the 13 differentially expressed NARCD pathway genes
+## Novel 2-step Machine Learning Framework --------------------------
+### Step 1: Machine learning based gene selection of each of the 13 differentially expressed NARCD pathway genes
 
 Gene selection was performed using 46 machine learning and generalized linear survival model combinations. The survival models used to generate model combinations are as follows: I) Univariate cox regression, II) LASSO regression, III) Ridge regression, IV) random forest survival (RSF), V) plsRcox, VI) CoxBoost, VII) StepCox, VIII) SuperPC, and IX) Gradient Boost Machine (GBM).
 
 These model combinations were applied to each of the 13 DE-NARCD pathway genes to find the genes selected for optimal survival predictive power (C-index). Hence, risk scores for each pathway were calculated, derived from the best model combinations of each pathway.
 
-## Step 2: Identifying the best combined model of the NARCD pathways / development of c-RCDI
+### Step 2: Identifying the best combined model of the NARCD pathways / development of c-RCDI
 
 Logistic regression was applied to find the best 2-4 pathway combination by calculating the C-indices for each pathway(s) combination. The combined risk score was calculated further to get the combined risk score, which we named as the combined regulated cell death index (c-RCDI), formed from a prognostic risk model of 43 genes.
 
-# c-RCDI Constitutive Pathways: Ferroptosis, NETosis, Pyroptosis, and Autosis
+#### c-RCDI Constitutive Pathways: Ferroptosis, NETosis, Pyroptosis, and Autosis
 
 ## Predictive capability of the c-RCDI
 
