@@ -8,6 +8,8 @@ Authors: Avik Sengupta, Sushree Sangita Kar, Rahul Kumar# [# corresponding autho
 
 Affiliation: Computational Genomics & Transcriptomics (CG&T) laboratory, Department of Biotechnology, Indian Institute of Technology Hyderabad, Kandi, Sangareddy, Telangana-502285, India
 
+Correspondence: rahulk@bt.iith.ac.in
+
 ## Study Overview
 
 We identified and developed an integrative machine learning based prognostic risk model, derived from 13 combined non-apoptotic regulated cell death pathway genes, in colorectal cancer (CRC).
